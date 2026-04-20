@@ -1,0 +1,75 @@
+application:
+  actions: actions
+  web: web-src
+  runtimeManifest:
+    packages:
+      prism:
+        license: Apache-2.0
+        actions:
+          fetch-issues:
+            function: actions/fetch-issues/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+              GITHUB_TOKEN: $GITHUB_TOKEN
+              TARGET_REPOS: $TARGET_REPOS
+            annotations:
+              require-adobe-auth: false
+              final: true
+          triage-issue:
+            function: actions/triage-issue/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+              ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+              ANTHROPIC_MODEL: $ANTHROPIC_MODEL
+            annotations:
+              require-adobe-auth: false
+              final: true
+          fix-issue:
+            function: actions/fix-issue/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            limits:
+              timeout: 300000
+              memory: 512
+            inputs:
+              LOG_LEVEL: debug
+              GITHUB_TOKEN: $GITHUB_TOKEN
+              ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+              ANTHROPIC_MODEL: $ANTHROPIC_MODEL
+            annotations:
+              require-adobe-auth: false
+              final: true
+          create-pr:
+            function: actions/create-pr/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+              GITHUB_TOKEN: $GITHUB_TOKEN
+            annotations:
+              require-adobe-auth: false
+              final: true
+          approve-pr:
+            function: actions/approve-pr/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+              GITHUB_TOKEN: $GITHUB_TOKEN
+            annotations:
+              require-adobe-auth: false
+              final: true
+          notify:
+            function: actions/notify/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+              SLACK_WEBHOOK_URL: $SLACK_WEBHOOK_URL
+            annotations:
+              require-adobe-auth: false
+              final: true
