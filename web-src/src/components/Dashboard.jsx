@@ -178,6 +178,10 @@ const Dashboard = ({ ims }) => {
         onClose={() => setReviewing(null)}
         onApprove={async (iss) => { await handleAction('approve', iss); setReviewing(null) }}
         onReject={async (iss) => { await handleAction('reject', iss); setReviewing(null) }}
+        onRegenerate={async (iss) => {
+          await handleAction('fix', iss)
+          setReviewing(null)
+        }}
       />
     </>
   )

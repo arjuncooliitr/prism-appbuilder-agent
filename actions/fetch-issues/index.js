@@ -41,12 +41,15 @@ async function main (params) {
 
         for (const iss of issues) {
           const existing = await getIssue(iss.repo, iss.number)
+          // Merge strategy: start from any prior bot state (draft, pr, triage,
+          // skip_reason, approved_at, rejected_at, ...), overlay with fresh
+          // GitHub metadata (title, body, labels, comments, updated_at, ...),
+          // then explicitly set our timestamps. GitHub data has no `status`
+          // field so the existing bot status survives the overlay.
           const merged = {
+            ...(existing || {}),
             ...iss,
-            // Preserve bot-state fields if already present
             status: (existing && existing.status) || 'new',
-            triage: existing && existing.triage,
-            pr: existing && existing.pr,
             first_seen_at: (existing && existing.first_seen_at) || new Date().toISOString(),
             last_fetched_at: new Date().toISOString()
           }

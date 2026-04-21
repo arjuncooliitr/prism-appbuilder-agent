@@ -13,7 +13,7 @@ const ARCHETYPE_LABEL = {
   'needs-human': 'Needs human'
 }
 
-const PRReviewModal = ({ issue, onClose, onApprove, onReject }) => {
+const PRReviewModal = ({ issue, onClose, onApprove, onReject, onRegenerate }) => {
   useEffect(() => {
     if (!issue) return undefined
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
@@ -114,7 +114,7 @@ const PRReviewModal = ({ issue, onClose, onApprove, onReject }) => {
             </>
           ) : (
             <div className="review__section" style={{ textAlign: 'center', color: 'var(--text-2)' }}>
-              No draft available yet. Run "Fix & draft PR" first.
+              No draft attached to this issue. Click <strong>Generate draft</strong> below to run the fix pipeline now.
             </div>
           )}
         </div>
@@ -129,9 +129,15 @@ const PRReviewModal = ({ issue, onClose, onApprove, onReject }) => {
         }}>
           <button className="btn btn--ghost" onClick={onClose}>Close</button>
           <button className="btn btn--danger" onClick={() => onReject(issue)}>Reject</button>
-          <button className="btn btn--primary" onClick={() => onApprove(issue)} disabled={!draft}>
-            Approve & mark ready
-          </button>
+          {!draft && onRegenerate ? (
+            <button className="btn btn--primary" onClick={() => onRegenerate(issue)}>
+              Generate draft
+            </button>
+          ) : (
+            <button className="btn btn--primary" onClick={() => onApprove(issue)} disabled={!draft}>
+              Approve &amp; mark ready
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -142,7 +148,8 @@ PRReviewModal.propTypes = {
   issue: PropTypes.object,
   onClose: PropTypes.func.isRequired,
   onApprove: PropTypes.func.isRequired,
-  onReject: PropTypes.func.isRequired
+  onReject: PropTypes.func.isRequired,
+  onRegenerate: PropTypes.func
 }
 
 export default PRReviewModal
