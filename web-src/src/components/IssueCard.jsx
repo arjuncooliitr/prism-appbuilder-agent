@@ -55,7 +55,9 @@ const IssueCard = ({ issue, onAction }) => {
   const status = issue.status || 'new'
   const triage = issue.triage
   const archetype = triage && triage.archetype
-  const prio = (triage && triage.priority) || null
+  // Coerce priority to the 3-level scheme (clamps legacy 4/5 state to low).
+  const rawPrio = triage && triage.priority
+  const prio = rawPrio == null ? null : Math.min(3, Math.max(1, rawPrio))
   const freshness = (triage && triage.freshness) || null
   const actions = actionsForStatus(status, archetype)
   const repoShort = issue.repo.split('/')[1] || issue.repo

@@ -20,20 +20,25 @@ const SYSTEM_PROMPT = `You are PRism, a triage assistant for open-source GitHub 
 
 For each issue you receive, return STRICT JSON with this shape:
 {
-  "priority": 1-5,          // 1 = critical user-blocker, 5 = nice-to-have
+  "priority": 1 | 2 | 3,    // 1 = high (must fix soon), 2 = medium (should fix), 3 = low (nice-to-have)
   "freshness": "fresh|active|stale",  // fresh<7d, active 7-30d, stale >30d with no recent activity
   "archetype": "typo|dep-bump|bug|needs-human",
   "rationale": "one short sentence explaining the above, max 160 chars"
 }
 
-Guidance:
+Priority guidance:
+- P1 (high): reproducible user-blocking bugs, broken CI, security issues, regressions, or anything labelled critical/p0/p1.
+- P2 (medium): confirmed bugs without severe impact, dep bumps with CVEs, docs issues that mislead users.
+- P3 (low): typos, cosmetic tweaks, minor improvements, stale feature requests.
+
+Archetype guidance:
 - "typo" covers documentation/README/markdown fixes, broken links, and small copy edits.
 - "dep-bump" covers stale dependency versions in package.json that can be safely bumped.
 - "bug" covers reproducible defects with clear scope that a small code change can fix.
-- "needs-human" is for feature requests, architectural changes, vague reports, or anything ambiguous.
-- When in doubt, lean toward "needs-human".
-- Labels like "help wanted", "good first issue", "docs" are strong signals.
-- Respond with ONLY the JSON object. No preamble, no code fences.`
+- "needs-human" is for feature requests, architectural changes, vague reports, or anything ambiguous. When in doubt, lean here.
+
+Labels like "help wanted", "good first issue", "docs", "critical", "p0" are strong signals.
+Respond with ONLY the JSON object. No preamble, no code fences.`
 
 function daysBetween (a, b) {
   return Math.abs(new Date(a).getTime() - new Date(b).getTime()) / (1000 * 60 * 60 * 24)
@@ -57,11 +62,17 @@ function heuristicTriage (issue) {
     archetype = 'bug'
   }
 
-  let priority = 3
-  if (labels.includes('critical') || labels.includes('p0')) priority = 1
-  else if (labels.includes('high') || labels.includes('p1')) priority = 2
-  else if (archetype === 'typo') priority = 4
-  else if (archetype === 'needs-human') priority = 5
+  // 3-level priority: 1 high / 2 medium / 3 low
+  let priority = 2
+  if (labels.includes('critical') || labels.includes('p0')
+      || labels.includes('high') || labels.includes('p1')
+      || labels.includes('security')) {
+    priority = 1
+  } else if (archetype === 'bug' && !labels.includes('low')) {
+    priority = 2
+  } else if (archetype === 'typo' || archetype === 'needs-human') {
+    priority = 3
+  }
 
   let freshness = 'active'
   if (ageDays < 7) freshness = 'fresh'

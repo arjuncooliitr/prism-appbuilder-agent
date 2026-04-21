@@ -29,12 +29,10 @@
   --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #22d3ee 100%);
   --accent-glow: 0 0 40px rgba(139, 92, 246, 0.25);
 
-  /* priorities */
-  --prio-1: #f43f5e;   /* red */
-  --prio-2: #fb923c;   /* orange */
-  --prio-3: #facc15;   /* yellow */
-  --prio-4: #60a5fa;   /* blue */
-  --prio-5: #6b7280;   /* gray */
+  /* priorities (3-level: high/medium/low) */
+  --prio-1: #f43f5e;   /* high — red */
+  --prio-2: #f59e0b;   /* medium — amber */
+  --prio-3: #60a5fa;   /* low — blue */
 
   /* status */
   --ok: #10b981;
@@ -474,8 +472,6 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
 .issue-card[data-prio="1"] { --prio: var(--prio-1); }
 .issue-card[data-prio="2"] { --prio: var(--prio-2); }
 .issue-card[data-prio="3"] { --prio: var(--prio-3); }
-.issue-card[data-prio="4"] { --prio: var(--prio-4); }
-.issue-card[data-prio="5"] { --prio: var(--prio-5); }
 
 .issue-head {
   display: flex;

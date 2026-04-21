@@ -76,19 +76,22 @@ const PRReviewModal = ({ issue, onClose, onApprove, onReject }) => {
         </div>
 
         <div className="review" style={{ padding: 24, overflow: 'auto' }}>
-          {triage && (
+          {triage && (() => {
+            const prio = Math.min(3, Math.max(1, triage.priority || 3))
+            return (
             <div className="review__section">
               <div className="review__label">Triage</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                <span className="badge badge--prio" data-prio={triage.priority} style={{ '--prio': `var(--prio-${triage.priority})` }}>
-                  <span className="badge__dot" />P{triage.priority}
+                <span className="badge badge--prio" data-prio={prio} style={{ '--prio': `var(--prio-${prio})` }}>
+                  <span className="badge__dot" />P{prio}
                 </span>
                 <span className={`badge badge--${triage.freshness}`}><span className="badge__dot" />{triage.freshness}</span>
                 <span className="badge badge--arche">{ARCHETYPE_LABEL[triage.archetype] || triage.archetype}</span>
               </div>
               {triage.rationale && <div className="review__body" style={{ fontStyle: 'italic', color: 'var(--text-2)' }}>{triage.rationale}</div>}
             </div>
-          )}
+            )
+          })()}
 
           {draft ? (
             <>
