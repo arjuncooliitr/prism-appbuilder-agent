@@ -1,42 +1,60 @@
 /**
- * Shared Claude (Anthropic) client helpers for PRism actions.
+ * Shared Claude client helpers for PRism.
  *
- * Day 1 note: if ANTHROPIC_API_KEY is not set, helpers return `null` so callers
- * can fall back to mock responses. This lets the rest of the pipeline be
- * developed/demoed before an API key is provisioned.
+ * Uses Anthropic's Bedrock-compatible SDK so we can authenticate with AWS
+ * instead of an sk-ant key. The API surface (messages.create, system blocks
+ * with cache_control, tool use) is identical.
+ *
+ * Auth priority inside the action:
+ *   1. explicit AWS_BEARER_TOKEN_BEDROCK (long-term Bedrock API key)
+ *   2. explicit awsAccessKey / awsSecretKey pair
+ *   3. (if neither) falls back to heuristic triage at the caller
  */
 
-let AnthropicCtor
+let BedrockCtor
 try {
-  // Lazy-required so the action still works before `npm install` runs.
   // eslint-disable-next-line global-require
-  AnthropicCtor = require('@anthropic-ai/sdk')
+  const mod = require('@anthropic-ai/bedrock-sdk')
+  BedrockCtor = mod.AnthropicBedrock || mod.default || mod
 } catch (_) {
-  AnthropicCtor = null
+  BedrockCtor = null
 }
 
-const DEFAULT_MODEL = 'claude-opus-4-6'
+const DEFAULT_MODEL = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
 
 /**
- * Return an Anthropic client, or null if not configured / SDK not installed.
- * @param {string} apiKey
- * @returns {object|null}
+ * Returns an AnthropicBedrock client, or null if auth/ctor isn't available.
+ * @param {object} opts
+ * @param {string} opts.bearerToken   AWS_BEARER_TOKEN_BEDROCK value
+ * @param {string} opts.awsAccessKey
+ * @param {string} opts.awsSecretKey
+ * @param {string} opts.awsRegion
  */
-function client (apiKey) {
-  if (!apiKey || !AnthropicCtor) return null
-  const Anthropic = AnthropicCtor.default || AnthropicCtor
-  return new Anthropic({ apiKey })
+function client ({ bearerToken, awsAccessKey, awsSecretKey, awsRegion }) {
+  if (!BedrockCtor) return null
+  const region = awsRegion || 'us-east-1'
+  try {
+    if (bearerToken) {
+      return new BedrockCtor({ apiKey: bearerToken, awsRegion: region })
+    }
+    if (awsAccessKey && awsSecretKey) {
+      return new BedrockCtor({ awsAccessKey, awsSecretKey, awsRegion: region })
+    }
+    return null
+  } catch (_) {
+    return null
+  }
 }
 
 /**
- * Call Claude for structured JSON output. Intended for triage.
+ * Call Claude (via Bedrock) for structured JSON output.
  * Uses ephemeral prompt caching on the system prompt block.
  *
- * @param {object} c Anthropic client
+ * @param {object} c Bedrock client
  * @param {object} opts
  * @param {string} opts.system system prompt (cacheable)
  * @param {string} opts.user user message (issue payload)
- * @param {string} [opts.model]
+ * @param {string} [opts.model] Bedrock model ID
  * @param {number} [opts.maxTokens]
  */
 async function jsonCompletion (c, { system, user, model = DEFAULT_MODEL, maxTokens = 1024 }) {
@@ -52,12 +70,10 @@ async function jsonCompletion (c, { system, user, model = DEFAULT_MODEL, maxToke
     ],
     messages: [{ role: 'user', content: user }]
   })
-  // Concatenate text blocks
   const text = (res.content || [])
     .filter(b => b.type === 'text')
     .map(b => b.text)
     .join('')
-  // Strip ```json fences if the model added them
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
   try {
     return { data: JSON.parse(cleaned), raw: text, usage: res.usage }

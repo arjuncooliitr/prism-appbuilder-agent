@@ -23,8 +23,11 @@ application:
             runtime: nodejs:22
             inputs:
               LOG_LEVEL: debug
-              ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
-              ANTHROPIC_MODEL: $ANTHROPIC_MODEL
+              AWS_BEARER_TOKEN_BEDROCK: $AWS_BEARER_TOKEN_BEDROCK
+              AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+              AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+              AWS_REGION: $AWS_REGION
+              BEDROCK_MODEL_ID: $BEDROCK_MODEL_ID
             annotations:
               require-adobe-auth: false
               final: true
@@ -38,8 +41,11 @@ application:
             inputs:
               LOG_LEVEL: debug
               GITHUB_TOKEN: $GITHUB_TOKEN
-              ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
-              ANTHROPIC_MODEL: $ANTHROPIC_MODEL
+              AWS_BEARER_TOKEN_BEDROCK: $AWS_BEARER_TOKEN_BEDROCK
+              AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+              AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+              AWS_REGION: $AWS_REGION
+              BEDROCK_MODEL_ID: $BEDROCK_MODEL_ID
             annotations:
               require-adobe-auth: false
               final: true

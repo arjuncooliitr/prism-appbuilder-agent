@@ -123,16 +123,20 @@ async function main (params) {
       return errorResponse(404, `Issue ${repo}#${number} not found in state — run fetch-issues first`, logger)
     }
 
-    const apiKey = params.ANTHROPIC_API_KEY
-    const model = params.ANTHROPIC_MODEL || DEFAULT_MODEL
-    const c = client(apiKey)
+    const bearerToken = params.AWS_BEARER_TOKEN_BEDROCK
+    const awsAccessKey = params.AWS_ACCESS_KEY_ID
+    const awsSecretKey = params.AWS_SECRET_ACCESS_KEY
+    const awsRegion = params.AWS_REGION || 'us-east-1'
+    const model = params.BEDROCK_MODEL_ID || DEFAULT_MODEL
+    const c = client({ bearerToken, awsAccessKey, awsSecretKey, awsRegion })
 
     // Diagnostics surfaced in the response so we can trace LLM-vs-heuristic path
     const diag = {
-      has_api_key: Boolean(apiKey),
-      api_key_len: apiKey ? apiKey.length : 0,
-      api_key_prefix: apiKey ? apiKey.slice(0, 7) : null,
-      sdk_loaded: c !== null || Boolean(apiKey), // true if ctor path was attempted
+      has_bearer_token: Boolean(bearerToken),
+      token_len: bearerToken ? bearerToken.length : 0,
+      token_prefix: bearerToken ? bearerToken.slice(0, 6) : null,
+      has_aws_creds: Boolean(awsAccessKey && awsSecretKey),
+      aws_region: awsRegion,
       client_created: c !== null,
       model
     }
