@@ -21,7 +21,7 @@ const Dashboard = ({ ims }) => {
   const [error, setError] = useState(null)
   const [activity, setActivity] = useState([])
   const [reviewing, setReviewing] = useState(null)
-  const [filters, setFilters] = useState({ repo: 'all', archetype: 'all', status: 'all' })
+  const [filters, setFilters] = useState({ repo: 'all', priority: 'all', archetype: 'all', status: 'all' })
 
   const logActivity = useCallback((entry) => {
     setActivity(prev => [{ ...entry, at: new Date().toISOString() }, ...prev].slice(0, 60))
@@ -90,6 +90,11 @@ const Dashboard = ({ ims }) => {
     return issues
       .filter(i => {
         if (filters.repo !== 'all' && i.repo !== filters.repo) return false
+        if (filters.priority !== 'all') {
+          const raw = i.triage && i.triage.priority
+          const p = raw == null ? null : String(Math.min(3, Math.max(1, raw)))
+          if (p !== filters.priority) return false
+        }
         if (filters.archetype !== 'all' && (!i.triage || i.triage.archetype !== filters.archetype)) return false
         if (filters.status !== 'all' && (i.status || 'new') !== filters.status) return false
         return true

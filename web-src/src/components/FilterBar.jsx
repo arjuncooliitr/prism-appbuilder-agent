@@ -6,7 +6,14 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 
-const ARCHETYPES = [
+const PRIORITIES = [
+  { key: 'all', label: 'All' },
+  { key: '1', label: 'P1 · High' },
+  { key: '2', label: 'P2 · Medium' },
+  { key: '3', label: 'P3 · Low' }
+]
+
+const ISSUE_TYPES = [
   { key: 'all', label: 'All' },
   { key: 'typo', label: 'Typo' },
   { key: 'dep-bump', label: 'Dep bump' },
@@ -33,9 +40,10 @@ const FilterBar = ({ filters, onChange, repoOptions }) => {
 
   return (
     <div className="filters-v2">
-      <FilterRow label="Repo"       options={repoChips}  value={filters.repo}      onSelect={(v) => update('repo', v)} />
-      <FilterRow label="Archetype"  options={ARCHETYPES} value={filters.archetype} onSelect={(v) => update('archetype', v)} />
-      <FilterRow label="Status"     options={STATUSES}   value={filters.status}    onSelect={(v) => update('status', v)} />
+      <FilterRow label="Repo"       options={repoChips}   value={filters.repo}      onSelect={(v) => update('repo', v)} />
+      <FilterRow label="Priority"   options={PRIORITIES}  value={filters.priority}  onSelect={(v) => update('priority', v)} />
+      <FilterRow label="Issue type" options={ISSUE_TYPES} value={filters.archetype} onSelect={(v) => update('archetype', v)} />
+      <FilterRow label="Status"     options={STATUSES}    value={filters.status}    onSelect={(v) => update('status', v)} />
     </div>
   )
 }

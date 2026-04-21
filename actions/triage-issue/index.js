@@ -1,5 +1,5 @@
 /**
- * triage-issue action
+ * triage-issue action (v2 — 3-level priority scheme)
  *
  * Takes a single issue (repo + number) and classifies it via Claude:
  *   - priority:   1 (critical) .. 5 (nice-to-have)
@@ -127,14 +127,35 @@ async function main (params) {
     const model = params.ANTHROPIC_MODEL || DEFAULT_MODEL
     const c = client(apiKey)
 
+    // Diagnostics surfaced in the response so we can trace LLM-vs-heuristic path
+    const diag = {
+      has_api_key: Boolean(apiKey),
+      api_key_len: apiKey ? apiKey.length : 0,
+      api_key_prefix: apiKey ? apiKey.slice(0, 7) : null,
+      sdk_loaded: c !== null || Boolean(apiKey), // true if ctor path was attempted
+      client_created: c !== null,
+      model
+    }
+
     let triage
+    let lastError = null
     if (c) {
       logger.info(`Triaging ${repo}#${number} with ${model}`)
-      triage = await llmTriage(c, issue, model)
+      try {
+        triage = await llmTriage(c, issue, model)
+        diag.path = 'llm'
+      } catch (e) {
+        logger.error(`LLM triage failed, falling back to heuristic: ${e.message}`)
+        lastError = e.message
+        triage = heuristicTriage(issue)
+        diag.path = 'llm-failed-fallback'
+      }
     } else {
-      logger.warn(`ANTHROPIC_API_KEY not configured — using heuristic stub for ${repo}#${number}`)
+      logger.warn(`client() returned null — heuristic for ${repo}#${number}`)
       triage = heuristicTriage(issue)
+      diag.path = 'heuristic'
     }
+    if (lastError) triage.llm_error = lastError
 
     const updated = {
       ...issue,
@@ -143,7 +164,7 @@ async function main (params) {
     }
     await putIssue(repo, Number(number), updated)
 
-    return { statusCode: 200, body: { repo, number: Number(number), triage } }
+    return { statusCode: 200, body: { repo, number: Number(number), triage, _diag: diag } }
   } catch (error) {
     logger.error(error)
     return errorResponse(500, `triage-issue error: ${error.message}`, logger)
