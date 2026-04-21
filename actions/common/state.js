@@ -1,10 +1,16 @@
 /**
  * Shared state-store helpers for PRism.
  *
- * Uses @adobe/aio-lib-state for issue/PR tracking. Keys:
- *   issue:<owner>/<repo>:<number>
- *   pr:<owner>/<repo>:<number>
- *   stats:run:<timestamp>
+ * Uses @adobe/aio-lib-state for issue/PR tracking.
+ *
+ * Constraints we have to respect:
+ *   - keys must match /^[a-zA-Z0-9-_.*]{1,1024}$/ → we normalize "owner/repo"
+ *     by replacing disallowed chars with '-' and use '.' as the separator.
+ *   - values must be strings → we JSON.stringify on put and JSON.parse on get.
+ *
+ * Key shape:
+ *   issue.<owner-repo>.<number>
+ *   pr.<owner-repo>.<number>
  */
 
 const { State } = require('@adobe/aio-sdk')
@@ -18,33 +24,51 @@ async function getState () {
   return cached
 }
 
+/** Replace any char not in [a-zA-Z0-9-_.] with '-' so the key passes validation. */
+function normalize (s) {
+  return String(s).replace(/[^a-zA-Z0-9-_.]/g, '-')
+}
+
 function issueKey (repo, number) {
-  return `issue:${repo}:${number}`
+  return `issue.${normalize(repo)}.${number}`
 }
 
 function prKey (repo, number) {
-  return `pr:${repo}:${number}`
+  return `pr.${normalize(repo)}.${number}`
+}
+
+/** Safely parse a stored value (which we always JSON-encode on write). */
+function decode (raw) {
+  if (raw == null) return null
+  if (typeof raw !== 'string') return raw  // tolerate legacy shape
+  try {
+    return JSON.parse(raw)
+  } catch (_) {
+    return raw
+  }
 }
 
 async function getIssue (repo, number) {
   const s = await getState()
   const res = await s.get(issueKey(repo, number))
-  return res ? res.value : null
+  return res ? decode(res.value) : null
 }
 
 async function putIssue (repo, number, value, ttl = 86400 * 30) {
   const s = await getState()
-  await s.put(issueKey(repo, number), value, { ttl })
+  await s.put(issueKey(repo, number), JSON.stringify(value), { ttl })
 }
 
 async function listIssues () {
   const s = await getState()
   const out = []
-  // aio-lib-state supports listing with a match prefix
-  for await (const { keys } of s.list({ match: 'issue:*' })) {
+  for await (const { keys } of s.list({ match: 'issue.*' })) {
     for (const key of keys) {
       const res = await s.get(key)
-      if (res && res.value) out.push(res.value)
+      if (res && res.value) {
+        const decoded = decode(res.value)
+        if (decoded) out.push(decoded)
+      }
     }
   }
   return out
@@ -54,6 +78,7 @@ module.exports = {
   getState,
   issueKey,
   prKey,
+  normalize,
   getIssue,
   putIssue,
   listIssues
