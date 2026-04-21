@@ -1,24 +1,41 @@
 import React from 'react'
-import { Heading, View, Content, Link, Text } from '@adobe/react-spectrum'
 
 export const About = () => (
-  <View width="size-6000" padding="size-200">
-    <Heading level={1}>About PRism</Heading>
-    <Content>
-      <Text>
+  <div style={{ maxWidth: 720 }}>
+    <div className="hero">
+      <div>
+        <h1 className="hero__title">About PRism</h1>
+        <div className="hero__subtitle">Built during AUP AI Week 2026.</div>
+      </div>
+    </div>
+
+    <div className="review__section" style={{ marginBottom: 16 }}>
+      <div className="review__label">Purpose</div>
+      <div className="review__body">
         PRism is an autonomous AI engineer that triages open issues in Adobe aio
-        public repos and drafts PRs. It was built during AUP AI Week 2026 as a
-        showcase of App Builder as the platform for AI agents — every
-        capability runs as an I/O Runtime action, state is persisted in
-        aio-lib-state, and the review UI is a React Spectrum SPA extension.
-      </Text>
-      <Heading level={3}>Links</Heading>
-      <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
-        <li><Link><a href="https://developer.adobe.com/app-builder/" target="_blank" rel="noreferrer">Adobe Developer App Builder</a></Link></li>
-        <li><Link><a href="https://github.com/adobe/aio-sdk" target="_blank" rel="noreferrer">Adobe I/O SDK</a></Link></li>
-        <li><Link><a href="https://react-spectrum.adobe.com/react-spectrum/" target="_blank" rel="noreferrer">React Spectrum</a></Link></li>
-        <li><Link><a href="https://docs.anthropic.com/" target="_blank" rel="noreferrer">Anthropic Claude API</a></Link></li>
+        public repos and drafts PRs. Every capability runs as an I/O Runtime
+        action, state is persisted in <code>aio-lib-state</code>, and the review
+        UI you&apos;re looking at is a React Spectrum extension. Reasoning is
+        powered by Claude Opus 4.6.
+      </div>
+    </div>
+
+    <div className="review__section" style={{ marginBottom: 16 }}>
+      <div className="review__label">Narrative</div>
+      <div className="review__body" style={{ fontStyle: 'italic', color: 'var(--text-1)' }}>
+        &ldquo;Built on App Builder to improve App Builder.&rdquo;
+      </div>
+    </div>
+
+    <div className="review__section">
+      <div className="review__label">Links</div>
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <li><a href="https://developer.adobe.com/app-builder/" target="_blank" rel="noreferrer">Adobe Developer App Builder →</a></li>
+        <li><a href="https://github.com/adobe/aio-sdk" target="_blank" rel="noreferrer">Adobe I/O SDK →</a></li>
+        <li><a href="https://react-spectrum.adobe.com/react-spectrum/" target="_blank" rel="noreferrer">React Spectrum →</a></li>
+        <li><a href="https://docs.anthropic.com/" target="_blank" rel="noreferrer">Anthropic Claude API →</a></li>
+        <li><a href="https://github.com/arjuncooliitr/prism-appbuilder-agent" target="_blank" rel="noreferrer">PRism on GitHub →</a></li>
       </ul>
-    </Content>
-  </View>
+    </div>
+  </div>
 )

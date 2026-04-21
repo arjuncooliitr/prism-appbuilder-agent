@@ -1,48 +1,48 @@
 /*
- * ActivityFeed — rolling log of bot events in the dashboard sidebar.
+ * ActivityFeed — timeline-style log of bot events in the right panel.
  */
 
 import React from 'react'
 import PropTypes from 'prop-types'
-import { View, Heading, Text, Flex, Divider, StatusLight } from '@adobe/react-spectrum'
 
-const VARIANT = {
-  fetched: 'info',
-  triage: 'info',
-  fix: 'notice',
-  approve: 'positive',
-  reject: 'negative',
-  error: 'negative',
-  review: 'neutral'
-}
-
-function format (iso) {
+function fmt (iso) {
   if (!iso) return ''
   const d = new Date(iso)
-  return d.toLocaleTimeString()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return `${hh}:${mm}:${ss}`
 }
 
 const ActivityFeed = ({ entries }) => (
-  <View borderRadius="medium" borderWidth="thin" borderColor="gray-300" padding="size-200" height="size-6000" overflow="auto">
-    <Heading level={3} margin={0}>Activity</Heading>
-    <Divider size="S" marginY="size-100" />
-    {entries.length === 0 && <Text UNSAFE_style={{ color: 'var(--spectrum-global-color-gray-600)' }}>No activity yet.</Text>}
-    <Flex direction="column" gap="size-100">
-      {entries.map((e, i) => (
-        <View key={i} paddingY="size-50">
-          <Flex direction="row" alignItems="center" gap="size-100">
-            <StatusLight variant={VARIANT[e.event] || 'neutral'}>{e.event}</StatusLight>
-            <Text UNSAFE_style={{ fontSize: '11px', color: 'var(--spectrum-global-color-gray-600)' }}>{format(e.at)}</Text>
-          </Flex>
-          <Text UNSAFE_style={{ fontSize: '12px' }}>{e.text}</Text>
-        </View>
-      ))}
-    </Flex>
-  </View>
+  <aside className="panel">
+    <div className="panel__head">
+      <h3 className="panel__title">Activity</h3>
+      <span className="panel__count">{entries.length}</span>
+    </div>
+    <div className="panel__body">
+      {entries.length === 0 ? (
+        <div style={{ padding: '12px 0', color: 'var(--text-3)', fontSize: 12 }}>
+          No activity yet. Trigger an action from a card to see events flow here.
+        </div>
+      ) : (
+        <ul className="timeline" style={{ listStyle: 'none', margin: 0, padding: 0, paddingLeft: 18 }}>
+          {entries.map((e, i) => (
+            <li key={i} className="timeline__item" data-kind={e.event}>
+              <span className="timeline__dot" />
+              <div className="timeline__head">
+                <span className="timeline__kind">{e.event}</span>
+                <span className="timeline__time">{fmt(e.at)}</span>
+              </div>
+              <span className="timeline__text">{e.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  </aside>
 )
 
-ActivityFeed.propTypes = {
-  entries: PropTypes.array.isRequired
-}
+ActivityFeed.propTypes = { entries: PropTypes.array.isRequired }
 
 export default ActivityFeed

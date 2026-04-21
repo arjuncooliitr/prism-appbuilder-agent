@@ -1,26 +1,9 @@
 /*
- * StatsStrip — header summary of the issue queue.
+ * StatsStrip — header summary tiles, priority-coded left borders.
  */
 
 import React, { useMemo } from 'react'
 import PropTypes from 'prop-types'
-import { Flex, View, Heading, Text } from '@adobe/react-spectrum'
-
-const Tile = ({ label, value }) => (
-  <View
-    backgroundColor="gray-100"
-    borderRadius="medium"
-    padding="size-200"
-    minWidth="size-2000"
-  >
-    <Text UNSAFE_style={{ fontSize: '11px', color: 'var(--spectrum-global-color-gray-700)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-      {label}
-    </Text>
-    <Heading level={2} margin={0}>{value}</Heading>
-  </View>
-)
-
-Tile.propTypes = { label: PropTypes.string.isRequired, value: PropTypes.node.isRequired }
 
 const StatsStrip = ({ issues }) => {
   const stats = useMemo(() => {
@@ -39,15 +22,24 @@ const StatsStrip = ({ issues }) => {
     return by
   }, [issues])
 
+  const tiles = [
+    { label: 'Total',    value: issues.length,                   variant: 'total' },
+    { label: 'New',      value: stats.new,                       variant: 'new' },
+    { label: 'Triaged',  value: stats.triaged,                   variant: 'triaged' },
+    { label: 'Drafted',  value: stats.drafted + stats.awaiting,  variant: 'drafted' },
+    { label: 'Approved', value: stats.approved + stats.merged,   variant: 'approved' },
+    { label: 'Skipped',  value: stats.skipped + stats.rejected,  variant: 'skipped' }
+  ]
+
   return (
-    <Flex direction="row" gap="size-200" wrap>
-      <Tile label="Total" value={issues.length} />
-      <Tile label="New" value={stats.new} />
-      <Tile label="Triaged" value={stats.triaged} />
-      <Tile label="Drafted" value={stats.drafted + stats.awaiting} />
-      <Tile label="Approved" value={stats.approved + stats.merged} />
-      <Tile label="Skipped" value={stats.skipped + stats.rejected} />
-    </Flex>
+    <div className="stats">
+      {tiles.map(t => (
+        <div key={t.label} className="stat" data-variant={t.variant}>
+          <div className="stat__label">{t.label}</div>
+          <div className="stat__value">{t.value}</div>
+        </div>
+      ))}
+    </div>
   )
 }
 
