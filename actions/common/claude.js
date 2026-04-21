@@ -20,7 +20,7 @@ try {
   BedrockCtor = null
 }
 
-const DEFAULT_MODEL = 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+const DEFAULT_MODEL = 'us.anthropic.claude-opus-4-20250514-v1:0'
 
 /**
  * Returns an AnthropicBedrock client, or null if auth/ctor isn't available.
