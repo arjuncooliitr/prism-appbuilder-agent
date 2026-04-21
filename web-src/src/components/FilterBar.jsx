@@ -1,5 +1,6 @@
 /*
- * FilterBar — pill-style filter chips for repo / archetype / status.
+ * FilterBar — segmented-control style filter groups.
+ * Labels are stacked left; options are visually connected pill rows.
  */
 
 import React from 'react'
@@ -17,7 +18,7 @@ const STATUSES = [
   { key: 'all', label: 'All' },
   { key: 'new', label: 'New' },
   { key: 'triaged', label: 'Triaged' },
-  { key: 'awaiting-review', label: 'Awaiting review' },
+  { key: 'awaiting-review', label: 'Awaiting' },
   { key: 'approved', label: 'Approved' },
   { key: 'skipped', label: 'Skipped' }
 ]
@@ -25,51 +26,39 @@ const STATUSES = [
 const FilterBar = ({ filters, onChange, repoOptions }) => {
   const repoChips = repoOptions.map(r => ({
     key: r,
-    label: r === 'all' ? 'All repos' : r.split('/')[1] || r
+    label: r === 'all' ? 'All' : r.split('/')[1] || r
   }))
 
   const update = (key, value) => onChange({ ...filters, [key]: value })
 
   return (
-    <div className="filters">
-      <FilterGroup
-        label="Repo"
-        options={repoChips}
-        value={filters.repo}
-        onSelect={(v) => update('repo', v)}
-      />
-      <FilterGroup
-        label="Archetype"
-        options={ARCHETYPES}
-        value={filters.archetype}
-        onSelect={(v) => update('archetype', v)}
-      />
-      <FilterGroup
-        label="Status"
-        options={STATUSES}
-        value={filters.status}
-        onSelect={(v) => update('status', v)}
-      />
+    <div className="filters-v2">
+      <FilterRow label="Repo"       options={repoChips}  value={filters.repo}      onSelect={(v) => update('repo', v)} />
+      <FilterRow label="Archetype"  options={ARCHETYPES} value={filters.archetype} onSelect={(v) => update('archetype', v)} />
+      <FilterRow label="Status"     options={STATUSES}   value={filters.status}    onSelect={(v) => update('status', v)} />
     </div>
   )
 }
 
-const FilterGroup = ({ label, options, value, onSelect }) => (
-  <div className="filter-group">
-    <span className="filter-group__label">{label}</span>
-    {options.map(o => (
-      <button
-        key={o.key}
-        className={`chip${value === o.key ? ' chip--active' : ''}`}
-        onClick={() => onSelect(o.key)}
-      >
-        {o.label}
-      </button>
-    ))}
+const FilterRow = ({ label, options, value, onSelect }) => (
+  <div className="filter-row">
+    <span className="filter-row__label">{label}</span>
+    <div className="segmented">
+      {options.map(o => (
+        <button
+          key={o.key}
+          className={`segmented__opt${value === o.key ? ' is-active' : ''}`}
+          onClick={() => onSelect(o.key)}
+          type="button"
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   </div>
 )
 
-FilterGroup.propTypes = {
+FilterRow.propTypes = {
   label: PropTypes.string.isRequired,
   options: PropTypes.array.isRequired,
   value: PropTypes.string.isRequired,
