@@ -67,18 +67,22 @@ const MAX_TREE_FILES = 200
 const FILE_SIZE_CAP = 200 * 1024 // 200KB hard cap on files we'll read
 
 /**
- * Normalize a proposed edit against the file's prior content on the branch:
- *   - if original ended with '\n' and new_content doesn't, append '\n'
- *     (prevents Prism from introducing eol-last lint failures)
- *   - if new_content is byte-identical to original, mark it as a no-op so the
- *     caller can drop it before committing (prevents empty commits)
+ * Normalize a proposed edit:
+ *   - Always ensure a trailing '\n' on non-empty content. Nearly every text
+ *     file should end with one (POSIX, ESLint eol-last, PEP 8 W292). Crucially
+ *     this also fixes a common LLM failure: Claude often emits "new_content"
+ *     without a trailing newline even when asked to preserve it, and without
+ *     this normalization the lint rule stays red forever. If the file already
+ *     lacks a trailing newline AND the issue is eol-last, adding one fixes it.
+ *   - If the result is byte-identical to the original, mark it as a no-op so
+ *     the caller can drop it before committing (prevents empty commits).
  */
 function normalizeEdit (original, proposed) {
-  if (original == null) return { content: proposed, noop: false }
   let content = proposed
-  if (original.endsWith('\n') && !content.endsWith('\n')) {
+  if (content.length > 0 && !content.endsWith('\n')) {
     content = content + '\n'
   }
+  if (original == null) return { content, noop: false }
   return { content, noop: content === original }
 }
 
