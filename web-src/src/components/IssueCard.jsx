@@ -27,7 +27,7 @@ function relTime (iso) {
   return `${mo}mo ago`
 }
 
-function actionsForStatus (status, archetype) {
+function actionsForStatus (status, archetype, hasRealPR, refixExhausted) {
   switch (status) {
     case 'new':
       return [{ key: 'triage', label: 'Triage now', variant: 'primary' }]
@@ -35,14 +35,18 @@ function actionsForStatus (status, archetype) {
       if (archetype === 'needs-human') return [{ key: 'reject', label: 'Dismiss', variant: 'ghost' }]
       return [{ key: 'fix', label: 'Fix & draft PR', variant: 'primary' }]
     case 'pr-drafted':
-    case 'awaiting-review':
-      return [
-        { key: 'review', label: 'Review PR', variant: 'primary' },
-        { key: 'reject', label: 'Reject', variant: 'danger' }
-      ]
+    case 'awaiting-review': {
+      const acts = [{ key: 'review', label: 'Review PR', variant: 'primary' }]
+      if (hasRealPR && !refixExhausted) acts.push({ key: 'refix', label: 'Re-fix', variant: 'ghost' })
+      acts.push({ key: 'reject', label: 'Reject', variant: 'danger' })
+      return acts
+    }
     case 'approved':
-    case 'merged':
-      return [{ key: 'review', label: 'View PR', variant: 'ghost' }]
+    case 'merged': {
+      const acts = [{ key: 'review', label: 'View PR', variant: 'ghost' }]
+      if (hasRealPR && !refixExhausted) acts.push({ key: 'refix', label: 'Re-fix', variant: 'ghost' })
+      return acts
+    }
     case 'skipped':
     case 'rejected':
       return [{ key: 'triage', label: 'Retriage', variant: 'ghost' }]
@@ -59,7 +63,10 @@ const IssueCard = ({ issue, onAction, isPending = false }) => {
   const rawPrio = triage && triage.priority
   const prio = rawPrio == null ? null : Math.min(3, Math.max(1, rawPrio))
   const freshness = (triage && triage.freshness) || null
-  const actions = isPending ? [] : actionsForStatus(status, archetype)
+  const hasRealPR = Boolean(issue.pr && issue.pr.number)
+  const refixExhausted = (issue.refix_history || []).length >= 3
+  const actions = isPending ? [] : actionsForStatus(status, archetype, hasRealPR, refixExhausted)
+  const refixAttempts = (issue.refix_history || []).length
   const repoShort = issue.repo.split('/')[1] || issue.repo
   const effectiveStatus = isPending ? 'fixing' : status
   const statusLabel = isPending ? 'fixing' : status.replace(/-/g, ' ')
@@ -131,6 +138,11 @@ const IssueCard = ({ issue, onAction, isPending = false }) => {
                 </svg>
                 PR #{issue.pr.number}
               </a>
+              {refixAttempts > 0 && (
+                <span className="refix-badge" title={`Prism has iterated ${refixAttempts} time${refixAttempts === 1 ? '' : 's'}`}>
+                  ↻ {refixAttempts}
+                </span>
+              )}
             </>
           )}
         </span>

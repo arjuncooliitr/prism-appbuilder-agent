@@ -75,7 +75,7 @@ const Dashboard = ({ ims }) => {
           // runtime exceeds CloudFront's 60s sync window so a 504 is normal
           // and does NOT mean failure. Mark the card as pending and rely on
           // the poll loop below to surface the final state.
-          setPendingFix(m => ({ ...m, [key(issue)]: Date.now() }))
+          setPendingFix(m => ({ ...m, [key(issue)]: { startedAt: Date.now(), kind: 'fix' } }))
           try {
             await invoke('fix-issue', params)
           } catch (e) {
@@ -83,6 +83,17 @@ const Dashboard = ({ ims }) => {
             logActivity({ event: 'fix', text: `${issue.repo}#${issue.number} · running in background (504 expected)` })
           }
           break
+        case 'refix': {
+          const refixBaseline = (issue.refix_history || []).length
+          setPendingFix(m => ({ ...m, [key(issue)]: { startedAt: Date.now(), kind: 'refix', baseline: refixBaseline } }))
+          try {
+            await invoke('refix-pr', params)
+          } catch (e) {
+            if (!e.isGatewayTimeout) throw e
+            logActivity({ event: 'refix', text: `${issue.repo}#${issue.number} · revising in background` })
+          }
+          break
+        }
         case 'approve':
           await invoke('approve-pr', { ...params, decision: 'approve' }); break
         case 'reject':
@@ -113,12 +124,26 @@ const Dashboard = ({ ims }) => {
           const next = { ...prev }
           const now = Date.now()
           for (const k of Object.keys(next)) {
+            const entry = next[k]
             const [r, n] = k.split('#')
             const iss = list.find(i => i.repo === r && String(i.number) === n)
-            const settled = iss && ['pr-drafted', 'awaiting-review', 'approved', 'skipped', 'rejected'].includes(iss.status)
-            const timedOut = now - next[k] > 10 * 60 * 1000
+            let settled = false
+            if (iss) {
+              if (entry.kind === 'refix') {
+                // Refix: success when refix_history grows past the baseline we captured
+                const currentCount = (iss.refix_history || []).length
+                settled = currentCount > (entry.baseline || 0)
+              } else {
+                // Fix: success when status transitions to any terminal-for-fix state
+                settled = ['pr-drafted', 'awaiting-review', 'approved', 'skipped', 'rejected'].includes(iss.status)
+              }
+            }
+            const timedOut = now - entry.startedAt > 10 * 60 * 1000
             if (settled || timedOut) {
-              if (settled && iss) logActivity({ event: 'fix', text: `${iss.repo}#${iss.number} settled: ${iss.status}` })
+              if (settled && iss) {
+                const label = entry.kind === 'refix' ? `re-fixed (attempt ${(iss.refix_history || []).length})` : `settled: ${iss.status}`
+                logActivity({ event: entry.kind || 'fix', text: `${iss.repo}#${iss.number} · ${label}` })
+              }
               if (timedOut && !settled) logActivity({ event: 'error', text: `${r}#${n} polling gave up after 10min` })
               delete next[k]
             }

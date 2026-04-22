@@ -182,6 +182,82 @@ async function createDraftPR (client, owner, repo, { title, body, head, base }) 
 }
 
 /**
+ * Get a PR's metadata including head SHA and mergeability.
+ */
+async function getPR (client, owner, repo, prNumber) {
+  const res = await client.pulls.get({ owner, repo, pull_number: prNumber })
+  return res.data
+}
+
+/**
+ * List inline review comments on a PR (file + line anchored).
+ */
+async function listReviewComments (client, owner, repo, prNumber) {
+  const res = await client.pulls.listReviewComments({
+    owner, repo, pull_number: prNumber, per_page: 50
+  })
+  return res.data.map(c => ({
+    id: c.id,
+    author: c.user && c.user.login,
+    path: c.path,
+    line: c.line || c.original_line,
+    body: c.body,
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+    in_reply_to_id: c.in_reply_to_id,
+    diff_hunk: c.diff_hunk
+  }))
+}
+
+/**
+ * List general PR discussion comments (PRs are issues under the hood).
+ */
+async function listIssueComments (client, owner, repo, prNumber) {
+  const res = await client.issues.listComments({
+    owner, repo, issue_number: prNumber, per_page: 50
+  })
+  return res.data.map(c => ({
+    id: c.id,
+    author: c.user && c.user.login,
+    body: c.body,
+    created_at: c.created_at,
+    updated_at: c.updated_at
+  }))
+}
+
+/**
+ * List CI check runs for a commit SHA. Includes name, status, conclusion, and
+ * up to 2KB of output text for failing checks (so Claude can see compiler /
+ * lint / test failures without us having to fetch full workflow logs).
+ */
+async function listChecksForRef (client, owner, repo, ref) {
+  const res = await client.checks.listForRef({
+    owner, repo, ref, per_page: 50
+  })
+  return (res.data.check_runs || []).map(c => ({
+    name: c.name,
+    status: c.status,                  // queued | in_progress | completed
+    conclusion: c.conclusion,          // success | failure | neutral | cancelled | timed_out | action_required | stale | skipped
+    started_at: c.started_at,
+    completed_at: c.completed_at,
+    html_url: c.html_url,
+    output_title: c.output && c.output.title,
+    output_summary: c.output && (c.output.summary || '').slice(0, 2048),
+    output_text: c.output && (c.output.text || '').slice(0, 2048)
+  }))
+}
+
+/**
+ * Post a general comment on a PR (PRs are issues under the hood).
+ */
+async function postPRComment (client, owner, repo, prNumber, body) {
+  const res = await client.issues.createComment({
+    owner, repo, issue_number: prNumber, body
+  })
+  return res.data
+}
+
+/**
  * Flip a draft PR to ready-for-review via GraphQL (REST has no direct endpoint).
  */
 async function markPRReady (client, owner, repo, prNumber) {
@@ -211,5 +287,10 @@ module.exports = {
   createOrResetBranch,
   commitEdits,
   createDraftPR,
-  markPRReady
+  markPRReady,
+  getPR,
+  listReviewComments,
+  listIssueComments,
+  listChecksForRef,
+  postPRComment
 }
