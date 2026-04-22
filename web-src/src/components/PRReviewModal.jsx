@@ -13,6 +13,33 @@ const ARCHETYPE_LABEL = {
   'needs-human': 'Needs human'
 }
 
+/**
+ * Renders a unified diff with +/-/hunk-header line coloring.
+ */
+function DiffView ({ diff }) {
+  if (!diff) {
+    return <pre className="code-block" style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>No diff.</pre>
+  }
+  const rows = diff.split('\n')
+  return (
+    <pre className="code-block diff-view" style={{ padding: 0 }}>
+      {rows.map((line, i) => {
+        let cls = 'diff-line'
+        if (line.startsWith('@@')) cls += ' diff-hunk'
+        else if (line.startsWith('+++ ') || line.startsWith('--- ')) cls += ' diff-meta'
+        else if (line.startsWith('+')) cls += ' diff-add'
+        else if (line.startsWith('-')) cls += ' diff-del'
+        return (
+          <span key={i} className={cls}>
+            {line || ' '}
+            {'\n'}
+          </span>
+        )
+      })}
+    </pre>
+  )
+}
+
 const PRReviewModal = ({ issue, onClose, onApprove, onReject, onRegenerate }) => {
   useEffect(() => {
     if (!issue) return undefined
@@ -108,8 +135,15 @@ const PRReviewModal = ({ issue, onClose, onApprove, onReject, onRegenerate }) =>
                 <pre className="code-block">{draft.body}</pre>
               </div>
               <div className="review__section">
-                <div className="review__label">Diff</div>
-                <pre className="code-block">{draft.diff}</pre>
+                <div className="review__label">
+                  Diff {draft.files_changed && draft.files_changed.length ? `(${draft.files_changed.length} file${draft.files_changed.length === 1 ? '' : 's'})` : ''}
+                </div>
+                <DiffView diff={draft.diff || ''} />
+                {draft.usage && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                    {draft.iterations} iteration{draft.iterations === 1 ? '' : 's'} · {draft.usage.input_tokens} in / {draft.usage.output_tokens} out tokens · {draft.usage.cache_read_input_tokens || 0} cached
+                  </div>
+                )}
               </div>
             </>
           ) : (

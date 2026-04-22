@@ -51,7 +51,7 @@ function actionsForStatus (status, archetype) {
   }
 }
 
-const IssueCard = ({ issue, onAction }) => {
+const IssueCard = ({ issue, onAction, isPending = false }) => {
   const status = issue.status || 'new'
   const triage = issue.triage
   const archetype = triage && triage.archetype
@@ -59,8 +59,10 @@ const IssueCard = ({ issue, onAction }) => {
   const rawPrio = triage && triage.priority
   const prio = rawPrio == null ? null : Math.min(3, Math.max(1, rawPrio))
   const freshness = (triage && triage.freshness) || null
-  const actions = actionsForStatus(status, archetype)
+  const actions = isPending ? [] : actionsForStatus(status, archetype)
   const repoShort = issue.repo.split('/')[1] || issue.repo
+  const effectiveStatus = isPending ? 'fixing' : status
+  const statusLabel = isPending ? 'fixing' : status.replace(/-/g, ' ')
 
   return (
     <article className="issue-card" data-prio={prio || ''}>
@@ -69,9 +71,9 @@ const IssueCard = ({ issue, onAction }) => {
           <span className="issue-num">#{issue.number}</span>
           <a href={issue.html_url} target="_blank" rel="noreferrer">{issue.title}</a>
         </h3>
-        <span className={`status-pill status-${status}`}>
-          <span className="status-pill__dot" />
-          {status.replace(/-/g, ' ')}
+        <span className={`status-pill status-${effectiveStatus}`}>
+          {isPending ? <span className="status-pill__spinner" /> : <span className="status-pill__dot" />}
+          {statusLabel}
         </span>
       </div>
 
@@ -112,7 +114,11 @@ const IssueCard = ({ issue, onAction }) => {
           {issue.comments > 0 && ` · ${issue.comments} comment${issue.comments === 1 ? '' : 's'}`}
         </span>
         <div className="issue-actions">
-          {actions.map(a => (
+          {isPending ? (
+            <span className="pending-label">
+              <span className="spinner spinner--sm" /> Claude is working on it…
+            </span>
+          ) : actions.map(a => (
             <button
               key={a.key}
               className={`btn btn--sm${a.variant ? ' btn--' + a.variant : ''}`}
@@ -129,7 +135,8 @@ const IssueCard = ({ issue, onAction }) => {
 
 IssueCard.propTypes = {
   issue: PropTypes.object.isRequired,
-  onAction: PropTypes.func.isRequired
+  onAction: PropTypes.func.isRequired,
+  isPending: PropTypes.bool
 }
 
 export default IssueCard

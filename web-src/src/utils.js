@@ -44,7 +44,10 @@ async function actionWebInvoke (actionUrl, headers = {}, params = {}, options = 
   let content = await response.text()
 
   if (!response.ok) {
-    throw new Error(`failed request to '${actionUrl}' with status: ${response.status} and message: ${content}`)
+    const err = new Error(`failed request to '${actionUrl}' with status: ${response.status} and message: ${content}`)
+    err.status = response.status
+    err.isGatewayTimeout = response.status === 504
+    throw err
   }
   try {
     content = JSON.parse(content)

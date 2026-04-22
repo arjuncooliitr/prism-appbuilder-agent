@@ -22,6 +22,9 @@ const Dashboard = ({ ims }) => {
   const [activity, setActivity] = useState([])
   const [reviewing, setReviewing] = useState(null)
   const [filters, setFilters] = useState({ repo: 'all', priority: 'all', archetype: 'all', status: 'all' })
+  // issues currently being fixed locally (keyed by `repo#number`). Used to show
+  // a spinner on the card while the backend action finishes async.
+  const [pendingFix, setPendingFix] = useState({})
 
   const logActivity = useCallback((entry) => {
     setActivity(prev => [{ ...entry, at: new Date().toISOString() }, ...prev].slice(0, 60))
@@ -58,6 +61,8 @@ const Dashboard = ({ ims }) => {
 
   useEffect(() => { refresh() }, [refresh])
 
+  const key = (iss) => `${iss.repo}#${iss.number}`
+
   const handleAction = useCallback(async (action, issue) => {
     const params = { repo: issue.repo, number: issue.number }
     logActivity({ event: action, text: `${issue.repo}#${issue.number} · ${issue.title.slice(0, 80)}` })
@@ -66,8 +71,17 @@ const Dashboard = ({ ims }) => {
         case 'triage':
           await invoke('triage-issue', params); break
         case 'fix':
-          await invoke('fix-issue', params)
-          await invoke('create-pr', params)
+          // fix-issue runs Claude + commits + opens PR in one action; typical
+          // runtime exceeds CloudFront's 60s sync window so a 504 is normal
+          // and does NOT mean failure. Mark the card as pending and rely on
+          // the poll loop below to surface the final state.
+          setPendingFix(m => ({ ...m, [key(issue)]: Date.now() }))
+          try {
+            await invoke('fix-issue', params)
+          } catch (e) {
+            if (!e.isGatewayTimeout) throw e
+            logActivity({ event: 'fix', text: `${issue.repo}#${issue.number} · running in background (504 expected)` })
+          }
           break
         case 'approve':
           await invoke('approve-pr', { ...params, decision: 'approve' }); break
@@ -84,6 +98,37 @@ const Dashboard = ({ ims }) => {
       logActivity({ event: 'error', text: `${action} failed: ${e.message}` })
     }
   }, [invoke, refresh, logActivity])
+
+  // Poll loop while any fix is pending. Refreshes state every 8s, clears an
+  // entry once its status settles or after a 10-minute hard cap.
+  useEffect(() => {
+    const active = Object.keys(pendingFix)
+    if (active.length === 0) return undefined
+    const timer = setInterval(async () => {
+      try {
+        const res = await invoke('fetch-issues')
+        const list = (res && res.issues) || []
+        setIssues(list)
+        setPendingFix(prev => {
+          const next = { ...prev }
+          const now = Date.now()
+          for (const k of Object.keys(next)) {
+            const [r, n] = k.split('#')
+            const iss = list.find(i => i.repo === r && String(i.number) === n)
+            const settled = iss && ['pr-drafted', 'awaiting-review', 'approved', 'skipped', 'rejected'].includes(iss.status)
+            const timedOut = now - next[k] > 10 * 60 * 1000
+            if (settled || timedOut) {
+              if (settled && iss) logActivity({ event: 'fix', text: `${iss.repo}#${iss.number} settled: ${iss.status}` })
+              if (timedOut && !settled) logActivity({ event: 'error', text: `${r}#${n} polling gave up after 10min` })
+              delete next[k]
+            }
+          }
+          return next
+        })
+      } catch (_) { /* next tick will retry */ }
+    }, 8000)
+    return () => clearInterval(timer)
+  }, [pendingFix, invoke, logActivity])
 
   const filtered = useMemo(() => {
     const FRESHNESS_RANK = { fresh: 0, active: 1, stale: 2 }
@@ -165,6 +210,7 @@ const Dashboard = ({ ims }) => {
                   key={`${issue.repo}#${issue.number}`}
                   issue={issue}
                   onAction={handleAction}
+                  isPending={Boolean(pendingFix[`${issue.repo}#${issue.number}`])}
                 />
               ))}
             </div>
