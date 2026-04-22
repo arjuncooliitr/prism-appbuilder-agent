@@ -48,17 +48,28 @@ You will be given:
 
 Your tools operate on the FIX BRANCH (prism/fix-N), not the default branch. read_file returns the file as it currently exists on the fix branch, including your previous edits.
 
-Your job:
-1. Read the feedback carefully. Understand the single most important thing the reviewer or CI is asking for.
-2. Make MINIMAL, targeted edits that address the feedback. Do not regenerate the whole fix or touch unrelated lines.
-3. If a reviewer's comment is ambiguous or outside the scope of the original fix, call abort with a reason that frames it as a question back to the reviewer. Prism will post that as a PR comment instead of pushing code.
-4. If CI is failing because of a pre-existing problem unrelated to your fix (infra, unrelated test), call abort with reason noting that.
+## Priority order (strict)
 
-Rules:
-- You're working on an existing branch. Your edits become an additional commit. Never undo previous work unless the feedback explicitly demands it.
-- Preserve formatting, imports, and the style of surrounding code.
-- Prefer doing one thing per iteration. If there are multiple pieces of feedback, address the most important one and let the next iteration handle the rest.
-- If no feedback needs a code change (e.g. all comments are questions / approvals), call abort with reason like "no actionable feedback — awaiting more review".`
+1. **Failing CI checks come FIRST.** If the feedback includes any failing check with compiler, lint, or test errors in its output, fix those before anything else. Lint errors (eol-last, indent, semi, no-trailing-spaces, unused-vars, etc.) are explicit and mechanical — the output tells you the exact file, line, and rule. Apply the fix literally.
+2. **Reviewer comments next.** Address the clearest request from a named human reviewer.
+3. **Never add proactive "improvements" while CI is red.** If CI is failing, do NOT make spec-compliance suggestions, refactors, or additional field additions. Fix what's broken, let CI go green, then stop. Proactive improvements are out of scope for revision mode entirely.
+
+## Workflow
+
+1. Read the feedback summary carefully. Identify the single highest-priority item per the rules above.
+2. Use list_files / read_file to locate the exact line mentioned. read_file gives you the CURRENT state of the fix branch, including your own earlier edits — so you can verify what's already there.
+3. propose_edit with the MINIMAL change that resolves the feedback. Do not touch unrelated lines.
+4. If the file's current content on the branch already matches what the feedback asks for (i.e. the fix is already applied), call abort with reason "requested change already present on branch". This prevents empty commits.
+5. If a reviewer's comment is ambiguous or outside the scope of the original fix, call abort with a reason framed as a question back to the reviewer. Prism posts that as a PR comment instead of pushing code.
+6. If CI is failing because of a pre-existing problem unrelated to your fix (infra, disabled repo, cold-start flake), call abort with reason noting that.
+7. If nothing in the feedback requires a code change (e.g. all comments are questions or approvals), call abort with reason "no actionable feedback — awaiting more review".
+
+## Formatting rules
+
+- Preserve trailing newlines. If the file ends with '\\n', your new_content MUST also end with '\\n'.
+- Preserve indentation style (tabs vs spaces), line endings, and semicolon convention exactly as in the surrounding code.
+- Never undo your own previous work unless the feedback explicitly demands it.
+- Each iteration is ONE commit; address one concern per iteration unless multiple are trivially related (same file, same rule).`
 
 function summarizeFeedback ({ reviewComments, issueComments, checks, sinceIso }) {
   const lines = []
@@ -67,12 +78,14 @@ function summarizeFeedback ({ reviewComments, issueComments, checks, sinceIso })
   // CI failures first — usually the highest-signal
   const failing = checks.filter(c => c.conclusion === 'failure' || c.conclusion === 'timed_out' || c.conclusion === 'action_required')
   if (failing.length) {
-    lines.push('## Failing CI checks')
+    lines.push('## Failing CI checks (address these FIRST before any other feedback)')
     for (const c of failing) {
-      lines.push(`- **${c.name}** (${c.conclusion}) → ${c.html_url}`)
-      if (c.output_title) lines.push(`  Title: ${c.output_title}`)
-      if (c.output_summary) lines.push(`  Summary:\n\`\`\`\n${c.output_summary.trim()}\n\`\`\``)
-      if (c.output_text) lines.push(`  Output (first 2KB):\n\`\`\`\n${c.output_text.trim()}\n\`\`\``)
+      lines.push(`\n### ${c.name} (${c.conclusion})`)
+      lines.push(`URL: ${c.html_url}`)
+      if (c.output_title) lines.push(`Title: ${c.output_title}`)
+      if (c.output_summary) lines.push(`Summary:\n\`\`\`\n${c.output_summary.trim()}\n\`\`\``)
+      if (c.output_text) lines.push(`Check output:\n\`\`\`\n${c.output_text.trim()}\n\`\`\``)
+      if (c.logs_tail) lines.push(`Job log tail (last 6KB — look here for the actual error):\n\`\`\`\n${c.logs_tail.trim()}\n\`\`\``)
     }
   }
 
@@ -143,10 +156,15 @@ async function main (params) {
       return errorResponse(400, `Issue ${repo}#${number} has no real PR to iterate on`, logger)
     }
 
-    const attempts = (issue.refix_history || []).length
-    if (attempts >= MAX_REFIX_ATTEMPTS) {
-      return errorResponse(429, `Refix cap reached (${MAX_REFIX_ATTEMPTS} attempts). Human intervention required.`, logger)
+    // Cap counts only `committed` attempts. No-op and aborted runs don't burn
+    // retry quota — otherwise a single confused iteration would exhaust the
+    // budget even though no actual fix was pushed.
+    const history = issue.refix_history || []
+    const committedCount = history.filter(h => h.outcome === 'committed').length
+    if (committedCount >= MAX_REFIX_ATTEMPTS) {
+      return errorResponse(429, `Refix cap reached (${MAX_REFIX_ATTEMPTS} committed attempts). Human intervention required.`, logger)
     }
+    const attempts = history.length
 
     const githubToken = params.GITHUB_TOKEN
     if (!githubToken) return errorResponse(400, 'GITHUB_TOKEN is not configured', logger)
@@ -241,7 +259,11 @@ async function main (params) {
       attempt: attempts + 1,
       trigger: 'manual',
       iterations: result.iterations,
-      usage: result.usage
+      usage: result.usage,
+      // Diagnostics so we can see what Claude was asked to address and how it responded
+      feedback_summary: feedbackSummary.slice(0, 4000),
+      final_text: (result.finalText || '').slice(0, 2000),
+      checks_failing: checks.filter(c => ['failure', 'timed_out', 'action_required'].includes(c.conclusion)).map(c => c.name)
     }
 
     if (result.aborted) {

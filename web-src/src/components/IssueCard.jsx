@@ -71,7 +71,9 @@ const IssueCard = ({ issue, onAction, isPending = false }) => {
   const prio = rawPrio == null ? null : Math.min(3, Math.max(1, rawPrio))
   const freshness = (triage && triage.freshness) || null
   const hasRealPR = Boolean(issue.pr && issue.pr.number)
-  const refixExhausted = (issue.refix_history || []).length >= 3
+  // Only committed attempts count toward the 3-commit cap (mirrors backend).
+  const committedRefixes = (issue.refix_history || []).filter(h => h.outcome === 'committed').length
+  const refixExhausted = committedRefixes >= 3
   const actions = isPending ? [] : actionsForStatus(status, archetype, hasRealPR, refixExhausted)
   const refixAttempts = (issue.refix_history || []).length
   const repoShort = issue.repo.split('/')[1] || issue.repo

@@ -67,6 +67,22 @@ const MAX_TREE_FILES = 200
 const FILE_SIZE_CAP = 200 * 1024 // 200KB hard cap on files we'll read
 
 /**
+ * Normalize a proposed edit against the file's prior content on the branch:
+ *   - if original ended with '\n' and new_content doesn't, append '\n'
+ *     (prevents Prism from introducing eol-last lint failures)
+ *   - if new_content is byte-identical to original, mark it as a no-op so the
+ *     caller can drop it before committing (prevents empty commits)
+ */
+function normalizeEdit (original, proposed) {
+  if (original == null) return { content: proposed, noop: false }
+  let content = proposed
+  if (original.endsWith('\n') && !content.endsWith('\n')) {
+    content = content + '\n'
+  }
+  return { content, noop: content === original }
+}
+
+/**
  * Runs the tool-use loop and returns the final result.
  * @param {object} claudeClient — Bedrock Claude client
  * @param {object} ghAccess — helpers bound to one repo
@@ -150,8 +166,18 @@ async function runFixLoop (claudeClient, ghAccess, { model, systemPrompt, userMe
               result = { error: 'path and new_content are required' }
               break
             }
-            edits.push({ path, new_content, reason: reason || '' })
-            result = { ok: true, staged_edits: edits.length }
+            // Check against the branch's current content so we can (a) preserve
+            // a trailing newline the file had before and (b) detect no-op
+            // proposals that would create empty commits.
+            let original = null
+            try { const r = await ghAccess.readFile(path); original = r.content } catch (_) { /* new file */ }
+            const { content: normalized, noop } = normalizeEdit(original, new_content)
+            if (noop) {
+              result = { error: `proposed content is byte-identical to the file already on the branch — no edit needed. Either call abort with reason "requested change already present on branch", or propose a different change.` }
+              break
+            }
+            edits.push({ path, new_content: normalized, reason: reason || '' })
+            result = { ok: true, staged_edits: edits.length, trailing_newline_preserved: normalized.endsWith('\n') }
             break
           }
           case 'abort': {

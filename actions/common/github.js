@@ -226,25 +226,59 @@ async function listIssueComments (client, owner, repo, prNumber) {
 }
 
 /**
- * List CI check runs for a commit SHA. Includes name, status, conclusion, and
- * up to 2KB of output text for failing checks (so Claude can see compiler /
- * lint / test failures without us having to fetch full workflow logs).
+ * Fetch GitHub Actions job logs as plain text. Returns the last `maxBytes`
+ * bytes (failures are almost always at the end). GitHub returns a 302 to a
+ * signed blob URL; octokit follows the redirect and gives us the text.
  */
-async function listChecksForRef (client, owner, repo, ref) {
+async function fetchJobLogs (client, owner, repo, jobId, { maxBytes = 6144 } = {}) {
+  try {
+    const res = await client.request('GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs', {
+      owner, repo, job_id: jobId
+    })
+    const body = typeof res.data === 'string' ? res.data : String(res.data || '')
+    return body.length > maxBytes ? body.slice(body.length - maxBytes) : body
+  } catch (_) {
+    return null
+  }
+}
+
+/**
+ * List CI check runs for a commit SHA. For failing GitHub Actions workflow
+ * checks we also pull the last ~6KB of raw job logs — that's where lint
+ * errors, test failures, and compiler output actually live (check.output.text
+ * is almost always null for Actions). This is what lets Claude see concrete
+ * error messages during refix instead of just a "build failed" URL.
+ */
+async function listChecksForRef (client, owner, repo, ref, { fetchLogs = true } = {}) {
   const res = await client.checks.listForRef({
     owner, repo, ref, per_page: 50
   })
-  return (res.data.check_runs || []).map(c => ({
-    name: c.name,
-    status: c.status,                  // queued | in_progress | completed
-    conclusion: c.conclusion,          // success | failure | neutral | cancelled | timed_out | action_required | stale | skipped
-    started_at: c.started_at,
-    completed_at: c.completed_at,
-    html_url: c.html_url,
-    output_title: c.output && c.output.title,
-    output_summary: c.output && (c.output.summary || '').slice(0, 2048),
-    output_text: c.output && (c.output.text || '').slice(0, 2048)
+  const runs = res.data.check_runs || []
+  const enriched = await Promise.all(runs.map(async c => {
+    const base = {
+      name: c.name,
+      status: c.status,
+      conclusion: c.conclusion,
+      started_at: c.started_at,
+      completed_at: c.completed_at,
+      html_url: c.html_url,
+      app_slug: c.app && c.app.slug,
+      output_title: c.output && c.output.title,
+      output_summary: c.output && (c.output.summary || '').slice(0, 2048),
+      output_text: c.output && (c.output.text || '').slice(0, 2048),
+      logs_tail: null
+    }
+    const isFailure = ['failure', 'timed_out', 'action_required'].includes(c.conclusion)
+    if (fetchLogs && isFailure && c.app && c.app.slug === 'github-actions') {
+      // html_url format: /actions/runs/{run_id}/job/{job_id}
+      const m = (c.html_url || '').match(/\/job\/(\d+)/)
+      if (m) {
+        base.logs_tail = await fetchJobLogs(client, owner, repo, Number(m[1]))
+      }
+    }
+    return base
   }))
+  return enriched
 }
 
 /**
