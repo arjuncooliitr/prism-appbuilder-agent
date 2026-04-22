@@ -1,5 +1,5 @@
 /**
- * Shared Claude client helpers for PRism.
+ * Shared Claude client helpers for Prism.
  *
  * Uses Anthropic's Bedrock-compatible SDK so we can authenticate with AWS
  * instead of an sk-ant key. The API surface (messages.create, system blocks

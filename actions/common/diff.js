@@ -1,5 +1,5 @@
 /**
- * Minimal unified-diff generator for PRism.
+ * Minimal unified-diff generator for Prism.
  *
  * Good enough for the dashboard diff preview — not a full git-diff replacement.
  * Uses a simple LCS-based line diff. For large files we fall back to showing

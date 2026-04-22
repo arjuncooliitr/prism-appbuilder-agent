@@ -1,10 +1,10 @@
 /**
- * Shared GitHub client helpers for PRism.
+ * Shared GitHub client helpers for Prism.
  *
  * Read helpers: listing issues, getting repo tree, reading file contents.
  * Write helpers: creating branches, committing edits, opening PRs.
  *
- * All writes go directly to origin (the target repo), so PRism requires push
+ * All writes go directly to origin (the target repo), so Prism requires push
  * access on every repo in TARGET_REPOS. Branch names are prefixed `prism/`
  * to stay out of the maintainer namespace.
  */

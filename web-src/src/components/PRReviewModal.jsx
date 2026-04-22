@@ -99,7 +99,32 @@ const PRReviewModal = ({ issue, onClose, onApprove, onReject, onRegenerate }) =>
               {issue.title}
             </h2>
           </div>
-          <button className="btn btn--ghost btn--sm" onClick={onClose} aria-label="Close">✕</button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {issue.pr && issue.pr.url && issue.pr.number && (
+              <a
+                className="btn btn--ghost btn--sm"
+                href={issue.pr.url}
+                target="_blank"
+                rel="noreferrer"
+                title={`Open PR #${issue.pr.number} on GitHub`}
+                style={{ textDecoration: 'none' }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="18" r="3" />
+                  <circle cx="6" cy="6" r="3" />
+                  <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                  <line x1="6" y1="9" x2="6" y2="21" />
+                </svg>
+                View PR #{issue.pr.number} on GitHub
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
+            )}
+            <button className="btn btn--ghost btn--sm" onClick={onClose} aria-label="Close">✕</button>
+          </div>
         </div>
 
         <div className="review" style={{ padding: 24, overflow: 'auto' }}>

@@ -1,5 +1,5 @@
 /*
- * PRism root app shell. Modern top-bar + content area layout.
+ * Prism root app shell. Modern top-bar + content area layout.
  */
 
 import React from 'react'
@@ -22,7 +22,7 @@ function App (props) {
               <div className="app-brand">
                 <div className="app-brand__logo">P</div>
                 <div>
-                  <span className="app-brand__title">PRism</span>
+                  <span className="app-brand__title">Prism</span>
                   <span className="app-brand__sub">autonomous issue triage for aio repos</span>
                 </div>
               </div>
@@ -47,7 +47,7 @@ function App (props) {
 function Fallback ({ componentStack, error }) {
   return (
     <div style={{ maxWidth: 720, margin: '80px auto', padding: 24, color: '#f4f4f8' }}>
-      <h1>PRism hit an unexpected error</h1>
+      <h1>Prism hit an unexpected error</h1>
       <pre style={{ background: '#141420', padding: 16, borderRadius: 8, overflow: 'auto' }}>
         {componentStack + '\n' + (error && error.message)}
       </pre>

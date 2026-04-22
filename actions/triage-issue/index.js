@@ -16,7 +16,7 @@ const { getIssue, putIssue } = require('../common/state')
 const { client, jsonCompletion, DEFAULT_MODEL } = require('../common/claude')
 const { errorResponse, stringParameters } = require('../utils')
 
-const SYSTEM_PROMPT = `You are PRism, a triage assistant for open-source GitHub issues in Adobe's App Builder (aio) ecosystem.
+const SYSTEM_PROMPT = `You are Prism, a triage assistant for open-source GitHub issues in Adobe's App Builder (aio) ecosystem.
 
 For each issue you receive, return STRICT JSON with this shape:
 {

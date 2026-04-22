@@ -1,5 +1,5 @@
 /*
- * PRism — main dashboard. Card-based issue queue with priority-coded stripes.
+ * Prism — main dashboard. Card-based issue queue with priority-coded stripes.
  */
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react'

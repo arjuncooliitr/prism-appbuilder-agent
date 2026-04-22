@@ -1,5 +1,5 @@
 /*
- * PRism — modern dashboard styling.
+ * Prism — modern dashboard styling.
  * Dark, roomy, priority-coded. Designed to demo well.
  */
 
@@ -615,6 +615,23 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
   color: var(--accent-1);
   font-style: italic;
   font-weight: 500;
+}
+
+.pr-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-3);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  transition: background 0.15s ease;
+}
+
+.pr-link:hover {
+  background: rgba(34, 211, 238, 0.1);
+  text-decoration: none;
 }
 
 @keyframes pulse {

@@ -1,5 +1,5 @@
 /**
- * Claude tool-use loop for PRism's fix-issue action.
+ * Claude tool-use loop for Prism's fix-issue action.
  *
  * Exposes four tools to Claude:
  *   - list_files(pattern?)   — returns file paths in the target repo

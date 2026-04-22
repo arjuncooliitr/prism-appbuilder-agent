@@ -1,5 +1,5 @@
 /**
- * Shared state-store helpers for PRism.
+ * Shared state-store helpers for Prism.
  *
  * Uses @adobe/aio-lib-state for issue/PR tracking.
  *

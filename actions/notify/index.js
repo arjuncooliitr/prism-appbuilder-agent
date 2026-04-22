@@ -28,7 +28,7 @@ async function main (params) {
     }
 
     const payload = {
-      text: `*PRism* · \`${event}\` · ${repo}#${number}\n${text || ''}`
+      text: `*Prism* · \`${event}\` · ${repo}#${number}\n${text || ''}`
     }
 
     const res = await fetch(webhook, {

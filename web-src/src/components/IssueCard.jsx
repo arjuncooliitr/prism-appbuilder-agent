@@ -112,11 +112,32 @@ const IssueCard = ({ issue, onAction, isPending = false }) => {
         <span className="issue-time">
           Updated {relTime(issue.updated_at)}
           {issue.comments > 0 && ` · ${issue.comments} comment${issue.comments === 1 ? '' : 's'}`}
+          {issue.pr && issue.pr.url && issue.pr.number && (
+            <>
+              {' · '}
+              <a
+                href={issue.pr.url}
+                target="_blank"
+                rel="noreferrer"
+                className="pr-link"
+                onClick={(e) => e.stopPropagation()}
+                title={`Open PR #${issue.pr.number} on GitHub`}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="18" r="3" />
+                  <circle cx="6" cy="6" r="3" />
+                  <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                  <line x1="6" y1="9" x2="6" y2="21" />
+                </svg>
+                PR #{issue.pr.number}
+              </a>
+            </>
+          )}
         </span>
         <div className="issue-actions">
           {isPending ? (
             <span className="pending-label">
-              <span className="spinner spinner--sm" /> Claude is working on it…
+              <span className="spinner spinner--sm" /> Prism is prisming…
             </span>
           ) : actions.map(a => (
             <button

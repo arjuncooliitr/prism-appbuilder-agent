@@ -4,7 +4,7 @@ export const About = () => (
   <div style={{ maxWidth: 720 }}>
     <div className="hero">
       <div>
-        <h1 className="hero__title">About PRism</h1>
+        <h1 className="hero__title">About Prism</h1>
         <div className="hero__subtitle">Built during AUP AI Week 2026.</div>
       </div>
     </div>
@@ -12,7 +12,7 @@ export const About = () => (
     <div className="review__section" style={{ marginBottom: 16 }}>
       <div className="review__label">Purpose</div>
       <div className="review__body">
-        PRism is an autonomous AI engineer that triages open issues in Adobe aio
+        Prism is an autonomous AI engineer that triages open issues in Adobe aio
         public repos and drafts PRs. Every capability runs as an I/O Runtime
         action, state is persisted in <code>aio-lib-state</code>, and the review
         UI you&apos;re looking at is a React Spectrum extension. Reasoning is
@@ -34,7 +34,7 @@ export const About = () => (
         <li><a href="https://github.com/adobe/aio-sdk" target="_blank" rel="noreferrer">Adobe I/O SDK →</a></li>
         <li><a href="https://react-spectrum.adobe.com/react-spectrum/" target="_blank" rel="noreferrer">React Spectrum →</a></li>
         <li><a href="https://docs.anthropic.com/" target="_blank" rel="noreferrer">Anthropic Claude API →</a></li>
-        <li><a href="https://github.com/arjuncooliitr/prism-appbuilder-agent" target="_blank" rel="noreferrer">PRism on GitHub →</a></li>
+        <li><a href="https://github.com/arjuncooliitr/prism-appbuilder-agent" target="_blank" rel="noreferrer">Prism on GitHub →</a></li>
       </ul>
     </div>
   </div>
