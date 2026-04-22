@@ -33,6 +33,13 @@ function actionsForStatus (status, archetype, hasRealPR, refixExhausted) {
       return [{ key: 'triage', label: 'Triage now', variant: 'primary' }]
     case 'triaged':
       if (archetype === 'needs-human') return [{ key: 'reject', label: 'Dismiss', variant: 'ghost' }]
+      // If a real PR already exists (e.g. user re-triaged after the first fix),
+      // the right operation is Re-fix, not a fresh Fix that would duplicate the PR.
+      if (hasRealPR) {
+        const acts = [{ key: 'review', label: 'Review PR', variant: 'primary' }]
+        if (!refixExhausted) acts.push({ key: 'refix', label: 'Re-fix', variant: 'ghost' })
+        return acts
+      }
       return [{ key: 'fix', label: 'Fix & draft PR', variant: 'primary' }]
     case 'pr-drafted':
     case 'awaiting-review': {
