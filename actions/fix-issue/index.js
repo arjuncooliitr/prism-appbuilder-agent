@@ -1,14 +1,23 @@
 /**
- * fix-issue action — v2, real Claude tool-use loop.
- *
- * Reads repo files via GitHub API, runs Claude with four tools (list_files,
- * read_file, propose_edit, abort), and stages proposed edits into the issue's
- * `draft` field. Doesn't touch GitHub refs or open a PR yet — that's create-pr.
+ * fix-issue action — v3
  *
  * Routing by archetype:
- *   typo / bug   → Claude tool-use loop, archetype-specific system prompt
- *   dep-bump     → Day 3 (still stubbed, Claude-authored body but no diff)
- *   needs-human  → skip and mark `skipped`
+ *   needs-human  → skip immediately, mark with reason
+ *   dep-bump     → stub (real implementation is Day-3 scope)
+ *   typo         → deterministic regex-extract find-and-replace first;
+ *                  fall through to Claude tool-use loop if that can't find a
+ *                  clean (old, new) pair or no files match
+ *   bug          → Claude tool-use loop (archetype-specific system prompt)
+ *
+ * The deterministic path was added after issue #32 (a simple URL replacement)
+ * repeatedly trapped the Claude loop in a describe-then-don't-execute failure
+ * mode. For tasks that have a clean mechanical solution, a small regex +
+ * grep-rewrite helper is strictly better than an agent.
+ *
+ * After edits are staged (via either path), this action inline-chains the
+ * create-pr helper so one invocation drives the full workflow. CloudFront's
+ * 60s sync limit will 504 the caller, but state ends up fully populated and
+ * the Dashboard's poll loop picks up the result.
  */
 
 const { Core } = require('@adobe/aio-sdk')
@@ -18,6 +27,7 @@ const { client: claudeClient, DEFAULT_MODEL } = require('../common/claude')
 const { runFixLoop } = require('../common/claude-tools')
 const { renderAll } = require('../common/diff')
 const { createPRFromDraft } = require('../common/pr')
+const { tryDeterministicTypoFix } = require('../common/deterministic-fix')
 const { errorResponse, stringParameters } = require('../utils')
 
 const SYSTEM_PROMPT_TYPO = `You are Prism, an autonomous engineer fixing doc-typo / broken-link / tiny-copy issues in Adobe's aio open-source repos.
@@ -31,55 +41,118 @@ You have five tools:
 
 Workflow:
 1. If the issue names a specific file (e.g. "README.md line 12"), use list_files / read_file directly.
-2. Otherwise, use search_content with the exact broken string from the issue (e.g. the old URL, the misspelled word) to locate where it actually lives. Narrow with path_filter (".md", "docs/") when the issue is obviously about docs.
-3. Once located, read_file the candidate, verify the typo/mistake actually exists at the reported location, then propose_edit with the FULL NEW CONTENT of the file.
-4. Keep the change minimal — fix the typo and nothing else. Don't touch unrelated lines.
+2. Otherwise, use search_content with the exact broken string from the issue to locate where it actually lives. Narrow with path_filter (".md", "docs/") when the issue is obviously about docs.
+3. Once located, read_file the candidate, verify the typo/mistake actually exists, then propose_edit with the FULL NEW CONTENT of the file.
+4. Keep the change minimal — fix the typo and nothing else.
 
 Abort criteria (with specific reasons, not "no edits"):
-- If search_content returns zero matches AND you've tried reasonable path filters, abort with reason "could not locate <query> in the repo after searching <what you tried>".
-- If the fix would span > 3 files, abort with "fix spans too many files".
-- If the issue is actually a feature request / unclear / ambiguous, abort with a clear human-readable reason.
-- NEVER end the loop without either proposing an edit or calling abort. Silence is not an option — if nothing landed, abort with why.
+- If search_content returns zero matches after reasonable path filters, abort "could not locate <query>".
+- If the fix would span > 3 files, abort "fix spans too many files".
+- If the issue is actually a feature request / unclear / ambiguous, abort with a clear reason.
+- NEVER end the loop without either proposing an edit or calling abort.
 
 CRITICAL execution discipline:
-- After search_content returns matches, you have everything you need for a typo fix. Read each matched file ONCE with read_file, then in the VERY NEXT turn call propose_edit for each file. Do not search again. Do not read any file twice.
-- Budget: 1 search_content + up to 3 read_file + up to 3 propose_edit. If you need more, something is wrong — abort instead.
-- Never end a turn with "let me continue" or "let me now" — that wastes an iteration. Just call the next tool directly.
-- Text in your response is ignored by the runtime. Tool calls are the only thing that matters. A plan without corresponding tool calls is worse than an abort.
+- After search_content returns matches, you have everything you need. Read each matched file ONCE, then in the VERY NEXT turn call propose_edit for each. Do not search again. Do not read any file twice.
+- Budget: 1 search_content + up to 3 read_file + up to 3 propose_edit. More than that, something is wrong — abort.
+- Text in your response is ignored by the runtime. Tool calls are the only thing that matters.
 
 Rules:
 - Preserve trailing newline, indentation, and existing formatting exactly.
-- Only propose edits to files whose problem you directly verified by reading the file.`
+- Only propose edits to files whose problem you directly verified by reading.`
 
 const SYSTEM_PROMPT_BUG = `You are Prism, an autonomous engineer fixing bug issues in Adobe's aio open-source repos.
 
 You have five tools:
 - list_files(pattern?): discover files in the repo by PATH match.
-- search_content(query, path_filter?): grep file CONTENTS across the repo. Use this to find where a reported symbol, error message, or function lives.
+- search_content(query, path_filter?): grep file CONTENTS across the repo.
 - read_file(path): read a file's full contents.
 - propose_edit(path, new_content, reason): stage the replacement content for a file.
-- abort(reason): cleanly abandon with a specific, actionable reason.
+- abort(reason): cleanly abandon with a specific reason.
 
 Workflow:
-1. Read the issue title, body, and any suggested fix carefully. Many aio bug reports include the exact fix in the body ("change X to Y", with a code snippet).
-2. If the fix is NOT specified in the issue body and requires understanding of the codebase, call abort with reason like "fix requires investigation beyond what's specified in the issue".
-3. If the fix IS specified: use search_content (for the specific code snippet or function name mentioned) or list_files to locate the file. Read it. Verify the current code matches what the issue describes. Then propose_edit with the FULL NEW CONTENT.
-4. If the change would span > 3 files, or adding tests would be essential to verify, call abort with a specific reason.
+1. Read the issue title, body, and suggested fix carefully. Many aio bug reports include the exact fix in the body.
+2. If the fix is NOT specified and requires understanding of the codebase, abort "fix requires investigation beyond what's specified".
+3. If the fix IS specified: search / list / read to locate the file, verify the current code matches what the issue describes, then propose_edit.
+4. If the change would span > 3 files, or tests would be essential to verify, abort with a specific reason.
 
 Abort criteria (with specific reasons, not "no edits"):
-- If you can't locate the relevant code after searching, abort with "could not locate <what you looked for>".
-- If the issue's fix is ambiguous, abort with "fix unclear: <what is missing>".
-- NEVER end the loop without either proposing an edit or calling abort. Silence is not an option.
+- If you can't locate the relevant code, abort "could not locate <what>".
+- If the issue's fix is ambiguous, abort "fix unclear: <what's missing>".
+- NEVER end the loop without either proposing an edit or calling abort.
 
 Rules:
-- NEVER guess at a fix. If the issue body doesn't give you a concrete change, abort.
-- Preserve formatting, imports, and unrelated code exactly.
-- Only propose edits you can trace directly to the issue description.`
+- NEVER guess at a fix. If the issue doesn't give you a concrete change, abort.
+- Preserve formatting, imports, and unrelated code exactly.`
 
 function pickSystemPrompt (archetype) {
   if (archetype === 'typo') return SYSTEM_PROMPT_TYPO
   if (archetype === 'bug') return SYSTEM_PROMPT_BUG
   return null
+}
+
+/**
+ * Build a draft object from a set of proposed edits, enriching with before-
+ * content and a unified diff. Shared by the deterministic and Claude paths.
+ */
+async function buildDraft ({ issue, edits, ghAccess, summary, extraMeta = {}, model }) {
+  const enriched = []
+  for (const e of edits) {
+    let beforeContent = ''
+    try { beforeContent = (await ghAccess.readFile(e.path)).content } catch (_) { /* new file */ }
+    enriched.push({ path: e.path, afterContent: e.new_content, beforeContent, reason: e.reason })
+  }
+  const diffText = renderAll(enriched)
+  const method = extraMeta.method || 'claude'
+  const methodLabel = method === 'deterministic' ? 'deterministic find-and-replace' : `Claude tool-use loop (${model})`
+
+  return {
+    branch: `prism/fix-${issue.number}`,
+    title: `[Prism] ${issue.title}`,
+    summary: summary || `Fix for ${issue.repo}#${issue.number}`,
+    files_changed: enriched.map(e => ({ path: e.path, reason: e.reason })),
+    edits: enriched.map(e => ({ path: e.path, content: e.afterContent })),
+    diff: diffText,
+    body: [
+      `## Prism autonomous fix for #${issue.number}`,
+      '',
+      `**Archetype:** ${issue.triage.archetype}`,
+      `**Priority:** P${issue.triage.priority}`,
+      `**Method:** ${methodLabel}`,
+      '',
+      summary || '',
+      '',
+      '### Files changed',
+      ...enriched.map(e => `- \`${e.path}\` — ${e.reason || ''}`),
+      '',
+      `> Generated by Prism. Awaiting human review.`
+    ].join('\n'),
+    generated_at: new Date().toISOString(),
+    method,
+    ...extraMeta
+  }
+}
+
+/**
+ * Persist the draft to state, then inline-chain create-pr so a single
+ * invocation drives the full pipeline. 504-tolerant: state is written
+ * regardless of whether the client is still connected.
+ */
+async function stageAndOpenPR ({ issue, draft, githubToken, logger, repoKey, number }) {
+  const staged = { ...issue, status: 'pr-drafted', draft }
+  await putIssue(repoKey, number, staged)
+
+  try {
+    logger.info(`Chaining PR creation for ${repoKey}#${number}`)
+    const prResult = await createPRFromDraft({ githubToken, issue: staged, logger })
+    const final = { ...staged, status: prResult.status, pr: prResult.pr }
+    await putIssue(repoKey, number, final)
+    return { draft, pr: prResult.pr, note: prResult.note }
+  } catch (prErr) {
+    logger.error(`PR creation failed after draft was staged: ${prErr.message}`)
+    const final = { ...staged, pr_error: prErr.message }
+    await putIssue(repoKey, number, final)
+    return { draft, pr_error: prErr.message, note: 'Draft staged but PR creation failed — use the create-pr action to retry.' }
+  }
 }
 
 async function main (params) {
@@ -96,20 +169,22 @@ async function main (params) {
     if (!issue.triage) return errorResponse(400, `Issue ${repo}#${number} has not been triaged`, logger)
 
     const archetype = issue.triage.archetype
+
+    // needs-human: short-circuit
     if (archetype === 'needs-human') {
       const updated = { ...issue, status: 'skipped', skip_reason: 'needs-human triage' }
       await putIssue(repo, Number(number), updated)
       return { statusCode: 200, body: { repo, number: Number(number), status: 'skipped', reason: 'needs-human' } }
     }
 
+    // dep-bump: still stubbed (Priority 2 for later)
     if (archetype === 'dep-bump') {
-      // Day 3 territory. Stub for now but still progress state.
       const stub = {
         branch: `prism/fix-${issue.number}`,
         title: `[Prism] ${issue.title}`,
-        body: `Auto-bump proposal (Day 3 stub — dependency bump logic not yet implemented).\n\n> Generated by Prism.`,
+        body: `Auto-bump proposal (stub — dependency bump logic not yet implemented).\n\n> Generated by Prism.`,
         files_changed: [],
-        diff: '// dep-bump archetype: real implementation coming Day 3.',
+        diff: '// dep-bump archetype: real implementation is a planned follow-up.',
         generated_at: new Date().toISOString(),
         stub: true
       }
@@ -118,37 +193,19 @@ async function main (params) {
       return { statusCode: 200, body: { repo, number: Number(number), draft: stub, note: 'dep-bump stub' } }
     }
 
-    const systemPrompt = pickSystemPrompt(archetype)
-    if (!systemPrompt) {
-      return errorResponse(400, `Unsupported archetype for auto-fix: ${archetype}`, logger)
-    }
-
-    // Build clients
-    const bearerToken = params.AWS_BEARER_TOKEN_BEDROCK
-    const awsAccessKey = params.AWS_ACCESS_KEY_ID
-    const awsSecretKey = params.AWS_SECRET_ACCESS_KEY
-    const awsRegion = params.AWS_REGION || 'us-east-1'
-    const model = params.BEDROCK_MODEL_ID || DEFAULT_MODEL
-    const claude = claudeClient({ bearerToken, awsAccessKey, awsSecretKey, awsRegion })
-    if (!claude) return errorResponse(500, 'Claude/Bedrock client could not be created — check AWS_BEARER_TOKEN_BEDROCK', logger)
-
+    // GitHub client + repo tree (needed by both deterministic and Claude paths)
     const githubToken = params.GITHUB_TOKEN
     if (!githubToken) return errorResponse(400, 'GITHUB_TOKEN is not configured', logger)
     const gh = octokit(githubToken)
-
     const { owner, repo: repoName } = parseRepo(repo)
     const defaultBranch = await getDefaultBranch(gh, owner, repoName)
-
-    // Pre-fetch the tree once (bounded by the tool's own cap when exposed)
     const tree = await getRepoTree(gh, owner, repoName, defaultBranch)
-    if (tree.truncated) logger.warn(`Repo tree truncated for ${repo}; Claude may miss files`)
+    if (tree.truncated) logger.warn(`Repo tree truncated for ${repo}; may miss files`)
     const allPaths = tree.files.map(f => f.path)
 
-    // File-content cache, so a repeated read_file doesn't double-bill GitHub
     const readCache = new Map()
     const ghAccess = {
-      owner,
-      repo: repoName,
+      owner, repo: repoName,
       async listAll () { return allPaths.slice() },
       async readFile (path) {
         if (readCache.has(path)) return readCache.get(path)
@@ -158,7 +215,41 @@ async function main (params) {
       }
     }
 
-    // Issue context for Claude
+    // ─── Deterministic typo path: try first, fall through to Claude if it bails ───
+    if (archetype === 'typo') {
+      const det = await tryDeterministicTypoFix({ issue, ghAccess, logger })
+      if (det && det.edits.length > 0) {
+        const draft = await buildDraft({
+          issue,
+          edits: det.edits,
+          ghAccess,
+          summary: det.summary,
+          extraMeta: {
+            method: 'deterministic',
+            deterministic: { pair: det.pair, source: det.pair.source }
+          },
+          model: null
+        })
+        const result = await stageAndOpenPR({ issue, draft, githubToken, logger, repoKey: repo, number: Number(number) })
+        return { statusCode: 200, body: { repo, number: Number(number), method: 'deterministic', ...result } }
+      }
+      logger.info(`Deterministic typo path did not produce edits for ${repo}#${number}; falling through to Claude loop`)
+    }
+
+    // ─── Claude tool-use loop (typo-fallback + bug) ───
+    const systemPrompt = pickSystemPrompt(archetype)
+    if (!systemPrompt) {
+      return errorResponse(400, `Unsupported archetype for auto-fix: ${archetype}`, logger)
+    }
+
+    const bearerToken = params.AWS_BEARER_TOKEN_BEDROCK
+    const awsAccessKey = params.AWS_ACCESS_KEY_ID
+    const awsSecretKey = params.AWS_SECRET_ACCESS_KEY
+    const awsRegion = params.AWS_REGION || 'us-east-1'
+    const model = params.BEDROCK_MODEL_ID || DEFAULT_MODEL
+    const claude = claudeClient({ bearerToken, awsAccessKey, awsSecretKey, awsRegion })
+    if (!claude) return errorResponse(500, 'Claude/Bedrock client could not be created — check AWS_BEARER_TOKEN_BEDROCK', logger)
+
     const userMessage = [
       `Repo: ${repo}`,
       `Default branch: ${defaultBranch}`,
@@ -170,7 +261,7 @@ async function main (params) {
       issue.body || '(no body)',
       '--- end body ---',
       '',
-      'Fix this issue. Use the tools. When done, call propose_edit for each file you want to change, then emit a short final message describing what you fixed.'
+      'Fix this issue. Use the tools. When done, call propose_edit for each file you want to change.'
     ].join('\n')
 
     logger.info(`Running fix loop for ${repo}#${number} (${archetype}) with ${model}`)
@@ -183,7 +274,6 @@ async function main (params) {
         status: 'skipped',
         skip_reason: reason,
         last_attempt: new Date().toISOString(),
-        // Diagnostics so we can trace why the loop produced no edits
         last_attempt_diag: {
           aborted: result.aborted,
           iterations: result.iterations,
@@ -195,10 +285,8 @@ async function main (params) {
       return {
         statusCode: 200,
         body: {
-          repo,
-          number: Number(number),
-          status: 'skipped',
-          reason,
+          repo, number: Number(number),
+          status: 'skipped', reason,
           iterations: result.iterations,
           usage: result.usage,
           final_text: result.finalText
@@ -206,69 +294,16 @@ async function main (params) {
       }
     }
 
-    // Enrich edits with before-content so the diff renderer can produce unified diffs
-    const enriched = []
-    for (const e of result.edits) {
-      let beforeContent = ''
-      try { beforeContent = (await ghAccess.readFile(e.path)).content } catch (_) { /* new file */ }
-      enriched.push({ path: e.path, afterContent: e.new_content, beforeContent, reason: e.reason })
-    }
-    const diffText = renderAll(enriched)
-
-    const draft = {
-      branch: `prism/fix-${issue.number}`,
-      title: `[Prism] ${issue.title}`,
-      summary: result.finalText || `Fix for ${repo}#${issue.number}`,
-      files_changed: enriched.map(e => ({ path: e.path, reason: e.reason })),
-      edits: enriched.map(e => ({ path: e.path, content: e.afterContent })),
-      diff: diffText,
-      body: [
-        `## Prism autonomous fix for #${issue.number}`,
-        '',
-        `**Archetype:** ${archetype}`,
-        `**Priority:** P${issue.triage.priority}`,
-        '',
-        result.finalText || '',
-        '',
-        '### Files changed',
-        ...enriched.map(e => `- \`${e.path}\` — ${e.reason || ''}`),
-        '',
-        `> Generated by Prism (model: ${model}). Awaiting human review before being marked ready.`
-      ].join('\n'),
-      generated_at: new Date().toISOString(),
-      iterations: result.iterations,
-      usage: result.usage
-    }
-
-    // Persist draft first so even a GitHub failure leaves the user with an
-    // inspectable diff in the modal.
-    const staged = { ...issue, status: 'pr-drafted', draft }
-    await putIssue(repo, Number(number), staged)
-
-    // Now chain the PR creation inline so the whole workflow is one
-    // invocation. CloudFront's 60s sync limit will still 504 the caller, but
-    // the action keeps running and state ends up fully populated.
-    try {
-      logger.info(`Chaining PR creation for ${repo}#${number}`)
-      const prResult = await createPRFromDraft({ githubToken, issue: staged, logger })
-      const final = { ...staged, status: prResult.status, pr: prResult.pr }
-      await putIssue(repo, Number(number), final)
-      return { statusCode: 200, body: { repo, number: Number(number), draft, pr: prResult.pr } }
-    } catch (prErr) {
-      logger.error(`PR creation failed after draft was staged: ${prErr.message}`)
-      const final = { ...staged, pr_error: prErr.message }
-      await putIssue(repo, Number(number), final)
-      return {
-        statusCode: 200,
-        body: {
-          repo,
-          number: Number(number),
-          draft,
-          pr_error: prErr.message,
-          note: 'Draft staged but PR creation failed — use the create-pr action to retry.'
-        }
-      }
-    }
+    const draft = await buildDraft({
+      issue,
+      edits: result.edits,
+      ghAccess,
+      summary: result.finalText,
+      extraMeta: { iterations: result.iterations, usage: result.usage, method: 'claude' },
+      model
+    })
+    const openResult = await stageAndOpenPR({ issue, draft, githubToken, logger, repoKey: repo, number: Number(number) })
+    return { statusCode: 200, body: { repo, number: Number(number), method: 'claude', ...openResult } }
   } catch (error) {
     logger.error(error)
     return errorResponse(500, `fix-issue error: ${error.message}`, logger)
