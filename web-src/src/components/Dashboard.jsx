@@ -12,18 +12,24 @@ import PRReviewModal from './PRReviewModal'
 import ActivityFeed from './ActivityFeed'
 import StatsStrip from './StatsStrip'
 import FilterBar from './FilterBar'
+import Pager from './Pager'
+import SettingsModal from './SettingsModal'
 
 const actionUrl = (name) => allActions[`prism/${name}`] || allActions[name]
 
+const PAGE_SIZE = 10
+
 const Dashboard = ({ ims }) => {
   const [issues, setIssues] = useState([])
+  const [targetRepos, setTargetRepos] = useState([])
+  const [settingsSource, setSettingsSource] = useState('env') // 'env' | 'state'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [activity, setActivity] = useState([])
   const [reviewing, setReviewing] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [filters, setFilters] = useState({ repo: 'all', priority: 'all', archetype: 'all', status: 'all' })
-  // issues currently being fixed locally (keyed by `repo#number`). Used to show
-  // a spinner on the card while the backend action finishes async.
+  const [page, setPage] = useState(1)
   const [pendingFix, setPendingFix] = useState({})
 
   const logActivity = useCallback((entry) => {
@@ -43,21 +49,27 @@ const Dashboard = ({ ims }) => {
     return actionWebInvoke(url, headers, params)
   }, [headers])
 
+  const applyFetchResponse = useCallback((res) => {
+    const list = (res && res.issues) || []
+    setIssues(list)
+    if (Array.isArray(res && res.target_repos)) setTargetRepos(res.target_repos)
+    if (res && res.settings_source) setSettingsSource(res.settings_source)
+  }, [])
+
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const res = await invoke('fetch-issues')
-      const list = (res && res.issues) || []
-      setIssues(list)
-      logActivity({ event: 'fetched', text: `${res.fetched_now || 0} new · ${list.length} total` })
+      applyFetchResponse(res)
+      logActivity({ event: 'fetched', text: `${(res && res.fetched_now) || 0} new · ${(res && res.issues || []).length} total` })
     } catch (e) {
       setError(e.message)
       logActivity({ event: 'error', text: `fetch failed: ${e.message}` })
     } finally {
       setLoading(false)
     }
-  }, [invoke, logActivity])
+  }, [invoke, applyFetchResponse, logActivity])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -71,27 +83,15 @@ const Dashboard = ({ ims }) => {
         case 'triage':
           await invoke('triage-issue', params); break
         case 'fix':
-          // fix-issue runs Claude + commits + opens PR in one action; typical
-          // runtime exceeds CloudFront's 60s sync window so a 504 is normal
-          // and does NOT mean failure. Mark the card as pending and rely on
-          // the poll loop below to surface the final state.
           setPendingFix(m => ({ ...m, [key(issue)]: { startedAt: Date.now(), kind: 'fix' } }))
-          try {
-            await invoke('fix-issue', params)
-          } catch (e) {
-            if (!e.isGatewayTimeout) throw e
-            logActivity({ event: 'fix', text: `${issue.repo}#${issue.number} · running in background (504 expected)` })
-          }
+          try { await invoke('fix-issue', params) }
+          catch (e) { if (!e.isGatewayTimeout) throw e; logActivity({ event: 'fix', text: `${issue.repo}#${issue.number} · running in background (504 expected)` }) }
           break
         case 'refix': {
           const refixBaseline = (issue.refix_history || []).length
           setPendingFix(m => ({ ...m, [key(issue)]: { startedAt: Date.now(), kind: 'refix', baseline: refixBaseline } }))
-          try {
-            await invoke('refix-pr', params)
-          } catch (e) {
-            if (!e.isGatewayTimeout) throw e
-            logActivity({ event: 'refix', text: `${issue.repo}#${issue.number} · revising in background` })
-          }
+          try { await invoke('refix-pr', params) }
+          catch (e) { if (!e.isGatewayTimeout) throw e; logActivity({ event: 'refix', text: `${issue.repo}#${issue.number} · revising in background` }) }
           break
         }
         case 'approve':
@@ -110,16 +110,15 @@ const Dashboard = ({ ims }) => {
     }
   }, [invoke, refresh, logActivity])
 
-  // Poll loop while any fix is pending. Refreshes state every 8s, clears an
-  // entry once its status settles or after a 10-minute hard cap.
+  // Poll loop while any fix is pending.
   useEffect(() => {
     const active = Object.keys(pendingFix)
     if (active.length === 0) return undefined
     const timer = setInterval(async () => {
       try {
         const res = await invoke('fetch-issues')
+        applyFetchResponse(res)
         const list = (res && res.issues) || []
-        setIssues(list)
         setPendingFix(prev => {
           const next = { ...prev }
           const now = Date.now()
@@ -130,11 +129,9 @@ const Dashboard = ({ ims }) => {
             let settled = false
             if (iss) {
               if (entry.kind === 'refix') {
-                // Refix: success when refix_history grows past the baseline we captured
                 const currentCount = (iss.refix_history || []).length
                 settled = currentCount > (entry.baseline || 0)
               } else {
-                // Fix: success when status transitions to any terminal-for-fix state
                 settled = ['pr-drafted', 'awaiting-review', 'approved', 'skipped', 'rejected'].includes(iss.status)
               }
             }
@@ -153,11 +150,20 @@ const Dashboard = ({ ims }) => {
       } catch (_) { /* next tick will retry */ }
     }, 8000)
     return () => clearInterval(timer)
-  }, [pendingFix, invoke, logActivity])
+  }, [pendingFix, invoke, applyFetchResponse, logActivity])
+
+  // Apply the target-repo filter first — issues from repos no longer watched
+  // are in state but shouldn't render. targetRepos being empty means we haven't
+  // received a response yet, so fall through (don't mask issues on first render).
+  const watchedIssues = useMemo(() => {
+    if (!targetRepos || targetRepos.length === 0) return issues
+    const set = new Set(targetRepos)
+    return issues.filter(i => set.has(i.repo))
+  }, [issues, targetRepos])
 
   const filtered = useMemo(() => {
     const FRESHNESS_RANK = { fresh: 0, active: 1, stale: 2 }
-    return issues
+    return watchedIssues
       .filter(i => {
         if (filters.repo !== 'all' && i.repo !== filters.repo) return false
         if (filters.priority !== 'all') {
@@ -178,12 +184,32 @@ const Dashboard = ({ ims }) => {
         if (fA !== fB) return fA - fB
         return new Date(b.updated_at) - new Date(a.updated_at)
       })
-  }, [issues, filters])
+  }, [watchedIssues, filters])
 
-  const repoOptions = useMemo(() => {
-    const set = new Set(issues.map(i => i.repo))
-    return ['all', ...set]
-  }, [issues])
+  // Reset to page 1 whenever the filtered set shrinks past the current page
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  useEffect(() => { if (page > totalPages) setPage(1) }, [totalPages, page])
+  useEffect(() => { setPage(1) }, [filters])
+
+  const paged = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return filtered.slice(start, start + PAGE_SIZE)
+  }, [filtered, page])
+
+  const repoOptions = useMemo(() => ['all', ...targetRepos], [targetRepos])
+
+  // Settings callbacks
+  const handleSettings = useCallback(async (op, repo, extra = {}) => {
+    const res = await invoke('settings', { op, repo, ...extra })
+    const list = (res && res.target_repos) || []
+    setTargetRepos(list)
+    setSettingsSource(res && res.source || 'state')
+    if (op === 'add_repo') logActivity({ event: 'fetched', text: `repo added · ${repo}` })
+    if (op === 'remove_repo') logActivity({ event: 'fetched', text: `repo removed · ${repo}${res && res.pruned_issues ? ` (${res.pruned_issues} issues pruned)` : ''}` })
+    // After changing the list, immediately refresh so new repos get polled
+    if (op === 'add_repo') await refresh()
+    return res
+  }, [invoke, refresh, logActivity])
 
   return (
     <>
@@ -196,6 +222,13 @@ const Dashboard = ({ ims }) => {
         </div>
         <div className="hero__actions">
           {loading && <div className="spinner" aria-label="refreshing" />}
+          <button className="btn btn--ghost" onClick={() => setSettingsOpen(true)} title="Manage watched repos">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Repos
+          </button>
           <button className="btn" onClick={refresh} disabled={loading}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 4 23 10 17 10" />
@@ -213,7 +246,7 @@ const Dashboard = ({ ims }) => {
         </div>
       )}
 
-      <StatsStrip issues={issues} />
+      <StatsStrip issues={watchedIssues} />
 
       <FilterBar
         filters={filters}
@@ -229,16 +262,25 @@ const Dashboard = ({ ims }) => {
               <div>No issues match these filters.</div>
             </div>
           ) : (
-            <div className="issue-list">
-              {filtered.map(issue => (
-                <IssueCard
-                  key={`${issue.repo}#${issue.number}`}
-                  issue={issue}
-                  onAction={handleAction}
-                  isPending={Boolean(pendingFix[`${issue.repo}#${issue.number}`])}
-                />
-              ))}
-            </div>
+            <>
+              <div className="issue-list">
+                {paged.map(issue => (
+                  <IssueCard
+                    key={`${issue.repo}#${issue.number}`}
+                    issue={issue}
+                    onAction={handleAction}
+                    isPending={Boolean(pendingFix[`${issue.repo}#${issue.number}`])}
+                  />
+                ))}
+              </div>
+              <Pager
+                page={page}
+                totalPages={totalPages}
+                totalItems={filtered.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </div>
         <ActivityFeed entries={activity} />
@@ -249,11 +291,18 @@ const Dashboard = ({ ims }) => {
         onClose={() => setReviewing(null)}
         onApprove={async (iss) => { await handleAction('approve', iss); setReviewing(null) }}
         onReject={async (iss) => { await handleAction('reject', iss); setReviewing(null) }}
-        onRegenerate={async (iss) => {
-          await handleAction('fix', iss)
-          setReviewing(null)
-        }}
+        onRegenerate={async (iss) => { await handleAction('fix', iss); setReviewing(null) }}
       />
+
+      {settingsOpen && (
+        <SettingsModal
+          targetRepos={targetRepos}
+          source={settingsSource}
+          onClose={() => setSettingsOpen(false)}
+          onAdd={(repo) => handleSettings('add_repo', repo)}
+          onRemove={(repo, prune) => handleSettings('remove_repo', repo, { prune })}
+        />
+      )}
     </>
   )
 }

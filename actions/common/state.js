@@ -74,6 +74,33 @@ async function listIssues () {
   return out
 }
 
+/** Settings accessors. Keys are stored as `setting.<name>`. */
+async function getSetting (name, defaultValue = null) {
+  const s = await getState()
+  const res = await s.get(`setting.${name}`)
+  if (!res) return defaultValue
+  const decoded = decode(res.value)
+  return decoded == null ? defaultValue : decoded
+}
+
+async function setSetting (name, value, ttl = 86400 * 365) {
+  const s = await getState()
+  await s.put(`setting.${name}`, JSON.stringify(value), { ttl })
+}
+
+async function deleteIssuesByRepo (repo) {
+  const s = await getState()
+  const prefix = `issue.${normalize(repo)}.`
+  let deleted = 0
+  for await (const { keys } of s.list({ match: `${prefix}*` })) {
+    for (const key of keys) {
+      await s.delete(key)
+      deleted++
+    }
+  }
+  return deleted
+}
+
 module.exports = {
   getState,
   issueKey,
@@ -81,5 +108,8 @@ module.exports = {
   normalize,
   getIssue,
   putIssue,
-  listIssues
+  listIssues,
+  getSetting,
+  setSetting,
+  deleteIssuesByRepo
 }

@@ -1,17 +1,24 @@
 /**
  * fetch-issues action
  *
- * Pulls open issues from every repo listed in TARGET_REPOS (CSV of "owner/repo"
- * entries), merges them with any existing state, and returns the combined
- * dashboard payload.
+ * Pulls open issues from the current target-repo list and merges them with
+ * existing state. The target list is read with this precedence:
+ *   1. settings.target_repos in aio-lib-state (set via the `settings` action
+ *      or the Dashboard's Settings modal)
+ *   2. TARGET_REPOS env var (CSV) baked into the action at deploy time
  *
- * GET/POST params:
- *   - force (optional): if "true", re-fetches even if we polled recently
+ * Dashboard-managed settings always win so users can add/remove repos from
+ * the UI without a redeploy. The env var is used on a fresh install where
+ * state has no setting yet.
+ *
+ * The response includes `target_repos` so the Dashboard can filter out
+ * issues from repos that are in state but no longer watched (rather than
+ * forcing a destructive prune).
  */
 
 const { Core } = require('@adobe/aio-sdk')
 const { octokit, parseTargetRepos, listOpenIssues } = require('../common/github')
-const { getIssue, putIssue, listIssues } = require('../common/state')
+const { getIssue, putIssue, listIssues, getSetting } = require('../common/state')
 const { errorResponse, stringParameters } = require('../utils')
 
 async function main (params) {
@@ -21,14 +28,18 @@ async function main (params) {
     logger.debug(stringParameters(params))
 
     const token = params.GITHUB_TOKEN
-    const repos = parseTargetRepos(params.TARGET_REPOS)
+    if (!token) return errorResponse(400, 'GITHUB_TOKEN is not configured', logger)
 
-    if (!token) {
-      return errorResponse(400, 'GITHUB_TOKEN is not configured', logger)
-    }
+    // Resolve the target list — state-first, env as fallback
+    const stateRepos = await getSetting('target_repos', null)
+    const repoCsv = Array.isArray(stateRepos) && stateRepos.length > 0
+      ? stateRepos.join(',')
+      : (params.TARGET_REPOS || '')
+    const repos = parseTargetRepos(repoCsv)
     if (repos.length === 0) {
-      return errorResponse(400, 'TARGET_REPOS is not configured (expected CSV of "owner/repo")', logger)
+      return errorResponse(400, 'No target repos configured (either settings.target_repos or TARGET_REPOS env)', logger)
     }
+    const targetRepos = repos.map(r => `${r.owner}/${r.repo}`)
 
     const gh = octokit(token)
     const fetched = []
@@ -41,11 +52,6 @@ async function main (params) {
 
         for (const iss of issues) {
           const existing = await getIssue(iss.repo, iss.number)
-          // Merge strategy: start from any prior bot state (draft, pr, triage,
-          // skip_reason, approved_at, rejected_at, ...), overlay with fresh
-          // GitHub metadata (title, body, labels, comments, updated_at, ...),
-          // then explicitly set our timestamps. GitHub data has no `status`
-          // field so the existing bot status survives the overlay.
           const merged = {
             ...(existing || {}),
             ...iss,
@@ -62,7 +68,9 @@ async function main (params) {
       }
     }
 
-    // Return the union of everything in state so the dashboard has a consistent view
+    // Return the union of everything in state so the dashboard has a consistent
+    // view. The dashboard filters this list against `target_repos` — issues
+    // from repos no longer watched persist in state but don't render.
     const all = await listIssues()
 
     return {
@@ -70,6 +78,8 @@ async function main (params) {
       body: {
         count: all.length,
         fetched_now: fetched.length,
+        target_repos: targetRepos,
+        settings_source: (stateRepos && stateRepos.length > 0) ? 'state' : 'env',
         errors,
         issues: all
       }

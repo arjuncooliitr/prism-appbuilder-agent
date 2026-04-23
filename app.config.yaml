@@ -97,3 +97,13 @@ application:
             annotations:
               require-adobe-auth: false
               final: true
+          settings:
+            function: actions/settings/index.js
+            web: 'yes'
+            runtime: nodejs:22
+            inputs:
+              LOG_LEVEL: debug
+              TARGET_REPOS: $TARGET_REPOS
+            annotations:
+              require-adobe-auth: false
+              final: true
