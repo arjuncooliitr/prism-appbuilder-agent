@@ -94,6 +94,8 @@ Honestly mixed — some brilliant, some genuinely worrying. Specific moments:
 
 - **The chained-invocation pattern assumed sync.** Dashboard's `handleAction('fix')` did `await invoke('fix-issue'); await invoke('create-pr')`. CloudFront kills connections at 60s, but fix-issue takes 60-120s with Claude's tool loop. The `await` threw, `create-pr` never ran, the backend drafts got orphaned. Fix: merge create-pr into fix-issue server-side, make Dashboard treat 504s as "still running," add a polling loop. **Lesson:** network-reality-aware retry patterns don't emerge from the agent by default; you have to notice them in live traffic.
 
+- **The "describe-instead-of-execute" trap — Prism's clearest unresolved failure.** Issue #32 (replace a broken URL) was the perfect typo task: Claude found the 3 matching files via `search_content`, then ended the turn with *"I found these files, let me prepare the updated content for each"* and never called `propose_edit`. Tightening the prompt made Claude more cautious instead of more decisive — it just burned all 15 iterations on repeated `read_file` + narration, hitting the 5-minute action timeout. I could not get Prism to commit this PR in 90 minutes of iteration. Full writeup in the Appendix. **Lesson:** prompt engineering ("just call the tools!") is not a reliable safety mechanism against a strong LLM reflex. Real fix is either (a) mechanical back-pressure in the loop — *"after N consecutive text-only turns, force a tool-or-abort turn"*, or (b) accepting that pure find-and-replace shouldn't use an agent at all — a deterministic 50-line helper beats a 15-iteration Claude loop on this exact class of task.
+
 **Exceptionally well / pleasant surprises:**
 
 - **Introspective debugging.** When I added a `_diag` diagnostic block to the triage action's response, Claude suggested richer fields (`token_prefix`, `client_created`, `path: 'llm' | 'heuristic' | 'llm-failed-fallback'`) than I'd have thought to add. Watching the agent debug its own tool use by adding better telemetry was genuinely new to me.
@@ -114,7 +116,7 @@ Honestly mixed — some brilliant, some genuinely worrying. Specific moments:
 
 ### 1. One specific change I will make in the future
 
-**Always surface tool-level diagnostics back to the agent, and keep a mechanical safety layer between the LLM's output and the irreversible action.** The two bugs that cost me the most time (no-op rejection loop, unfetched CI logs) both trace to the same root: I trusted Claude's output directly without a reviewer in between. `normalizeEdit` is a reviewer; `fetchJobLogs` is a reviewer. Every autonomous agent needs those per capability.
+**Pick the right tool for the shape of the problem before reaching for an agent.** The single biggest failure of the week (issue #32 — never committed a fix) was a find-and-replace task. A deterministic grep-and-rewrite helper would have produced a PR in under 10 seconds. Instead I handed it to a Claude tool-use loop that burned 15 iterations and a 5-minute action timeout on "let me continue reading." Going forward: if the problem has a clean mechanical solution, use it as the default path and keep Claude as the fallback for genuinely unstructured cases. Mechanical back-pressure inside the tool-use loop is the second-order fix, not the first.
 
 ### 2. What would have made this week more valuable
 
@@ -174,6 +176,25 @@ The one deducted point is time: AI Week was the right length to build a Tier-1 a
 
 **Quote from Claude mid-debug:** *"Without access to the actual CI logs, I need to make an educated guess about what might be failing."* — catching that as a diagnostic clue (rather than treating it as a dead end) led me to realize `check.output.text` is almost always empty for GitHub Actions workflows, which led to the `fetchJobLogs` helper via `/actions/jobs/{id}/logs`. The agent told me exactly what was missing; I just had to listen.
 
+**Day 3 — the unresolved roadblock: issue #32 (the rxjs-dev URL replacement).**
+
+A canonical broken-link typo: the issue body just says *"See links to https://rxjs.dev/, See https://rxjs-dev.firebaseapp.com instead"*. The old URL exists in three files (`README.md`, `types.d.ts`, `src/index.js`). Prism triaged it correctly as P3 typo. Clicking Fix & draft PR produced `status: skipped, skip_reason: "no edits proposed"`. Prism never opened a PR.
+
+I iterated on this for ~90 minutes across four attempts and could not get Claude to actually commit an edit. The specific failure mode compounded across three patterns:
+
+1. **Search works, but commitment doesn't.** Claude successfully called `search_content("rxjs-dev.firebaseapp.com")`, got back matches across all 3 files, emitted a final-turn text like *"I found the URL in README.md (lines 496-499), src/index.js (lines 618-621), types.d.ts (lines 226-229). I need to replace all occurrences. Let me prepare the updated content for each file."* — and then **the turn ended**. No `propose_edit` calls. The plan was stated; the work wasn't done. Classic "describe instead of execute" LLM failure.
+
+2. **Stricter prompts made it slower, not more decisive.** I rewrote the typo system prompt to explicitly say *"DO NOT narrate. Tool calls are the work. After search, your next turn must be propose_edit calls."* Subsequent attempt: Claude burned through all 10 → 15 MAX_ITERATIONS doing repeated `read_file` calls interleaved with *"Let me continue reading the file..."* text turns. It never got to `propose_edit`. The stricter prompt didn't change the behavior; it just made Claude more cautious.
+
+3. **Action timeout triggered before a self-nudge could rescue.** At MAX_ITERATIONS=15 with 15-25s per Claude round trip, the action exceeded the 5-minute I/O Runtime timeout (`app error, duration: 301895ms`) before even the one-shot "you didn't call any tools, do it now or abort" rescue turn could fire. State never got written; the dashboard kept showing stale `skipped` from a prior attempt.
+
+What I learned from this:
+
+- **Prompt engineering is not a load-bearing safety mechanism.** "Don't narrate, just call tools" *sounds* like it should work. In practice Claude (Opus 4) has a strong reflex to explain-then-act, and any uncertainty in the task routes through the explain path. You can't fix this with more forceful English.
+- **Tool-use loops need mechanical back-pressure, not just budget caps.** A hard iteration cap just trades "infinite narration" for "narration that hits the cap and stops." What's actually needed is a loop-internal controller: *"if 2 consecutive turns contain no `propose_edit` calls, inject a forced tool-or-abort turn."* That's a small design change I ran out of time to ship.
+- **Some tasks don't need an agent.** This issue — three files, one string, global replace — is the kind of thing a deterministic helper (grep repo, replace, commit) does reliably in 50 lines of code. The correct design for Prism's typo archetype is probably *"try a deterministic string-replace first; only fall back to the Claude loop if the issue isn't a simple find-and-replace."* LLMs are best when the problem is genuinely unstructured; forcing them through a task that has a clean mechanical solution is an anti-pattern I only saw clearly in retrospect.
+- **Honest status reporting matters more than a green demo.** #32 remains `skipped` in the dashboard as I submit this reflection. That's the right state — "Prism tried, Prism could not, here's why" beats a papered-over success. The dead-end *is* the lesson. Leaving it visible is the point.
+
 ---
 
 ## Outstanding (for Day 3+ or post-AI-Week)
@@ -183,6 +204,8 @@ Not done this week but worth capturing:
 - **Tier 2 — auto-poll** on dashboard refresh: every `fetch-issues` tick also checks PR status for issues in `awaiting-review` or `approved`, surfaces a red-dot "needs attention" badge, optionally auto-triggers refix.
 - **Tier 3 — real webhooks** via a custom I/O Events provider that Prism owns. GitHub PR events → Prism action → autonomous iteration without a human click.
 - **Real dep-bump archetype** (currently stubbed). Deterministic path: parse `package.json`, query npm registry for latest patch, generate PR. No Claude needed for the bump itself; Claude could author the PR body.
+- **Deterministic-first for typo archetype.** Same principle: parse the issue body for "replace X with Y" style patterns, grep the repo, rewrite files, commit. Only fall through to the Claude tool-use loop for typos whose target string isn't cleanly extractable. This would have resolved issue #32 in seconds.
+- **In-loop back-pressure in `runFixLoop`.** If 2 consecutive Claude turns contain no `propose_edit` or `abort` tool calls (just text / repeated reads), inject a forced tool-or-abort message mid-loop instead of waiting for loop exit. The current one-shot rescue only fires after the main loop ends, which is too late when MAX_ITERATIONS was spent thrashing.
 - **Fork-fallback** for repos where the user lacks push access (e.g., aio-theme in my account). Hybrid mode: try origin branch, fall back to fork.
 - **Merge watcher** — transition issue state to `merged` when GitHub marks the PR merged; feed the outcome into triage quality metrics.
 - **Prompt caching optimization** — the system prompt per archetype is ~2KB; caching it properly would drop token costs ~80%. Currently the `cache_control: ephemeral` block is there but cache hit rates are uneven; needs investigation.

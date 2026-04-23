@@ -26,6 +26,18 @@ const TOOLS = [
     }
   },
   {
+    name: 'search_content',
+    description: 'Search file contents for a literal string across the repo (grep). Returns up to 20 matches with {path, line, snippet}. Use this when the issue mentions a specific URL, symbol, or phrase but not which file contains it — e.g. "replace https://old.example.com" or "fix typo \\"teh\\"". Much more efficient than read_file-ing many files.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Literal string to search for.' },
+        path_filter: { type: 'string', description: 'Optional substring filter on file paths to narrow the search (e.g. "docs/" or ".md").' }
+      },
+      required: ['query']
+    }
+  },
+  {
     name: 'read_file',
     description: 'Read the full contents of a file at the given path. Returns the text.',
     input_schema: {
@@ -62,9 +74,12 @@ const TOOLS = [
   }
 ]
 
-const MAX_ITERATIONS = 10
+const MAX_ITERATIONS = 15
 const MAX_TREE_FILES = 200
 const FILE_SIZE_CAP = 200 * 1024 // 200KB hard cap on files we'll read
+const SEARCH_FILE_CAP = 80        // don't read more than this many files in one search
+const SEARCH_RESULT_CAP = 20      // return at most this many matches
+const SEARCH_SNIPPET_BEFORE = 40  // chars of context before/after the match
 
 /**
  * Normalize a proposed edit:
@@ -164,6 +179,44 @@ async function runFixLoop (claudeClient, ghAccess, { model, systemPrompt, userMe
             }
             break
           }
+          case 'search_content': {
+            const query = tu.input && tu.input.query
+            const pathFilter = tu.input && tu.input.path_filter
+            if (!query) { result = { error: 'query is required' }; break }
+            const all = await ghAccess.listAll()
+            let candidates = pathFilter ? all.filter(p => p.includes(pathFilter)) : all
+            // Heuristic narrowing: skip binary-ish paths and oversized dirs
+            candidates = candidates.filter(p => !/\.(png|jpg|jpeg|gif|ico|woff2?|ttf|eot|mp4|mov|zip|tar|gz|pdf)$/i.test(p))
+            const scanned = candidates.slice(0, SEARCH_FILE_CAP)
+            const matches = []
+            for (const p of scanned) {
+              if (matches.length >= SEARCH_RESULT_CAP) break
+              let content
+              try { content = (await ghAccess.readFile(p)).content } catch (_) { continue }
+              if (content.length > FILE_SIZE_CAP) continue
+              let idx = content.indexOf(query)
+              while (idx !== -1 && matches.length < SEARCH_RESULT_CAP) {
+                const before = content.slice(0, idx)
+                const lineNum = (before.match(/\n/g) || []).length + 1
+                const snippetStart = Math.max(0, idx - SEARCH_SNIPPET_BEFORE)
+                const snippetEnd = Math.min(content.length, idx + query.length + SEARCH_SNIPPET_BEFORE)
+                matches.push({
+                  path: p,
+                  line: lineNum,
+                  snippet: content.slice(snippetStart, snippetEnd).replace(/\n/g, '\\n')
+                })
+                idx = content.indexOf(query, idx + query.length)
+              }
+            }
+            result = {
+              query,
+              matches,
+              files_scanned: scanned.length,
+              files_total: candidates.length,
+              scan_truncated: candidates.length > SEARCH_FILE_CAP
+            }
+            break
+          }
           case 'propose_edit': {
             const { path, new_content, reason } = tu.input || {}
             if (!path || typeof new_content !== 'string') {
@@ -207,6 +260,48 @@ async function runFixLoop (claudeClient, ghAccess, { model, systemPrompt, userMe
     messages.push({ role: 'user', content: toolResults })
 
     if (aborted) break
+  }
+
+  // Rescue turn: if the loop exited with no edits AND no abort, Claude either
+  // ended with a text-only plan (describe-instead-of-execute) or burned its
+  // iterations on repeated reads without committing to an edit. Either way a
+  // one-shot nudge is worth one more LLM call. This rescue runs even if
+  // iterations == MAX_ITERATIONS — the cap is for the main loop, the rescue
+  // is a deliberate one-extra-turn escape hatch.
+  if (!aborted && edits.length === 0) {
+    iterations++
+    const nudge = 'STOP reading and searching. I have zero proposed edits staged and no abort was called. Your next turn must contain ONLY tool calls: propose_edit for each file you want to change (one per file), OR abort with a specific reason if you cannot proceed. Do NOT narrate, plan, or say "let me". Just call the tools.'
+    messages.push({ role: 'user', content: nudge })
+    const retry = await claudeClient.messages.create({
+      model,
+      max_tokens: maxTokens,
+      tools: TOOLS,
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      messages
+    })
+    const u = retry.usage || {}
+    totalUsage.input_tokens += u.input_tokens || 0
+    totalUsage.output_tokens += u.output_tokens || 0
+    totalUsage.cache_creation_input_tokens += u.cache_creation_input_tokens || 0
+    totalUsage.cache_read_input_tokens += u.cache_read_input_tokens || 0
+
+    const retryText = (retry.content || []).filter(b => b.type === 'text').map(b => b.text).join('')
+    if (retryText) finalText = retryText
+    const retryTools = (retry.content || []).filter(b => b.type === 'tool_use')
+    for (const tu of retryTools) {
+      if (tu.name === 'propose_edit') {
+        const { path, new_content, reason } = tu.input || {}
+        if (path && typeof new_content === 'string') {
+          let original = null
+          try { const r = await ghAccess.readFile(path); original = r.content } catch (_) { /* new file */ }
+          const { content: normalized, noop } = normalizeEdit(original, new_content)
+          if (!noop) edits.push({ path, new_content: normalized, reason: reason || '' })
+        }
+      } else if (tu.name === 'abort') {
+        aborted = true
+        abortReason = (tu.input && tu.input.reason) || 'unspecified'
+      }
+    }
   }
 
   return { edits, aborted, abortReason, finalText, iterations, usage: totalUsage }
