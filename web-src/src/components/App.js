@@ -23,7 +23,7 @@ function App (props) {
                 <div className="app-brand__logo">P</div>
                 <div>
                   <span className="app-brand__title">Prism</span>
-                  <span className="app-brand__sub">Autonomous triage &amp; PR drafting for Adobe aio repos</span>
+                  <span className="app-brand__sub">Autonomous AI agent for Adobe aio open-source maintenance</span>
                 </div>
               </div>
               <nav className="app-nav">
