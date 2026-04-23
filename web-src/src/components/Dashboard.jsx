@@ -216,9 +216,6 @@ const Dashboard = ({ ims }) => {
       <div className="hero">
         <div>
           <h1 className="hero__title">Issue queue</h1>
-          <div className="hero__subtitle">
-            Triaged, ranked, and routed by Claude Opus — awaiting your review where it matters.
-          </div>
         </div>
         <div className="hero__actions">
           {loading && <div className="spinner" aria-label="refreshing" />}
