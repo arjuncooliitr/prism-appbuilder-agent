@@ -115,9 +115,25 @@ const IssueCard = ({ issue, onAction, isPending = false }) => {
             {freshness}
           </span>
         )}
-        {(issue.labels || []).slice(0, 3).map(l => (
-          <span key={l} className="badge">{l}</span>
-        ))}
+        {(() => {
+          // Dedupe labels against what other badges already communicate.
+          // Without this, a GitHub label "bug" renders alongside the archetype
+          // badge "Bug", showing the same tag twice on the same card.
+          const redundant = new Set()
+          if (archetype) {
+            redundant.add(archetype.toLowerCase())
+            // Common GitHub label equivalents of our archetypes
+            if (archetype === 'typo') { redundant.add('documentation'); redundant.add('docs') }
+            if (archetype === 'dep-bump') { redundant.add('dependencies'); redundant.add('dep') }
+          }
+          if (freshness) redundant.add(freshness.toLowerCase())
+          const filtered = (issue.labels || [])
+            .filter(l => l && !redundant.has(String(l).toLowerCase()))
+            .slice(0, 3)
+          return filtered.map(l => (
+            <span key={l} className="badge">{l}</span>
+          ))
+        })()}
       </div>
 
       {triage && triage.rationale && (

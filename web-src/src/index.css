@@ -22,12 +22,12 @@
   --text-2: #7d7d90;
   --text-3: #53536a;
 
-  /* accents */
-  --accent-1: #8b5cf6;   /* violet */
-  --accent-2: #6366f1;   /* indigo */
-  --accent-3: #22d3ee;   /* cyan */
-  --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #22d3ee 100%);
-  --accent-glow: 0 0 40px rgba(139, 92, 246, 0.25);
+  /* accents — Spectrum indigo family, no cross-hue gradient */
+  --accent-1: #6366f1;   /* indigo 500 */
+  --accent-2: #4f46e5;   /* indigo 600 */
+  --accent-3: #818cf8;   /* indigo 400 */
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  --accent-glow: 0 0 32px rgba(99, 102, 241, 0.28);
 
   /* priorities (3-level: high/medium/low) */
   --prio-1: #f43f5e;   /* high — red */
@@ -40,9 +40,10 @@
   --bad: #ef4444;
   --info: #06b6d4;
 
-  /* typography */
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* typography — Source Sans 3 is Adobe's open-source typeface and the
+     closest public match for Adobe Clean; Source Code Pro is its mono pair. */
+  --font-sans: 'adobe-clean', 'Source Sans 3', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Source Code Pro', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* spacing + radius */
   --radius-sm: 6px;
@@ -73,8 +74,8 @@ html, body, #root {
 
 body {
   background:
-    radial-gradient(1200px 600px at 15% -10%, rgba(139, 92, 246, 0.08), transparent),
-    radial-gradient(900px 500px at 90% 0%, rgba(34, 211, 238, 0.06), transparent),
+    radial-gradient(1200px 600px at 15% -10%, rgba(99, 102, 241, 0.08), transparent),
+    radial-gradient(900px 500px at 90% 0%, rgba(79, 70, 229, 0.05), transparent),
     var(--bg-0);
   background-attachment: fixed;
 }
@@ -115,22 +116,21 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
 }
 
 .app-brand__logo {
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: var(--accent-gradient);
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  background: var(--accent-2);
   display: grid; place-items: center;
-  color: #fff; font-weight: 700; font-size: 14px;
-  box-shadow: var(--accent-glow);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.02em;
 }
 
 .app-brand__title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   letter-spacing: -0.01em;
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text-0);
 }
 
 .app-brand__sub {
@@ -268,13 +268,10 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
 
 .stats-bar__total-value {
   font-family: var(--font-mono);
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.03em;
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text-0);
   line-height: 1;
 }
 
@@ -560,7 +557,7 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
 .badge--active .badge__dot { background: var(--info); }
 .badge--stale  { color: var(--text-3); border-color: var(--border-subtle); }
 
-.badge--arche { background: rgba(139, 92, 246, 0.12); border-color: rgba(139, 92, 246, 0.3); color: #c4b5fd; }
+.badge--arche { background: rgba(99, 102, 241, 0.12); border-color: rgba(99, 102, 241, 0.3); color: #c7d2fe; }
 
 .status-pill {
   display: inline-flex;
@@ -591,12 +588,12 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
 .status-rejected  .status-pill__dot { background: var(--bad); }
 .status-skipped   { color: var(--text-3); background: rgba(83, 83, 106, 0.15); }
 .status-skipped   .status-pill__dot { background: var(--text-3); }
-.status-fixing    { color: var(--accent-1); background: rgba(139, 92, 246, 0.14); }
+.status-fixing    { color: var(--accent-1); background: rgba(99, 102, 241, 0.14); }
 .status-fixing    .status-pill__dot { background: var(--accent-1); animation: pulse 1.2s ease-in-out infinite; }
 
 .status-pill__spinner {
   width: 10px; height: 10px;
-  border: 1.5px solid rgba(139, 92, 246, 0.35);
+  border: 1.5px solid rgba(99, 102, 241, 0.35);
   border-top-color: var(--accent-1);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -630,7 +627,7 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
 }
 
 .pr-link:hover {
-  background: rgba(34, 211, 238, 0.1);
+  background: rgba(99, 102, 241, 0.1);
   text-decoration: none;
 }
 
@@ -641,7 +638,7 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
   padding: 1px 6px;
   margin-left: 6px;
   border-radius: 4px;
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(99, 102, 241, 0.15);
   color: var(--accent-1);
   font-family: var(--font-mono);
   font-size: 10px;
@@ -985,8 +982,8 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
 }
 
 .diff-line.diff-hunk {
-  color: #c4b5fd;
-  background: rgba(139, 92, 246, 0.08);
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.08);
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
   padding: 2px 12px;
