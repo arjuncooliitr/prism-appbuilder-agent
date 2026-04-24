@@ -4,6 +4,7 @@
  */
 
 :root {
+  /* Defaults are dark; [data-theme="light"] overrides below. */
   /* surfaces */
   --bg-0: #07070c;
   --bg-1: #0e0e16;
@@ -21,6 +22,9 @@
   --text-1: #b8b8c8;
   --text-2: #7d7d90;
   --text-3: #53536a;
+
+  /* brand */
+  --adobe-red: #eb1000;
 
   /* accents — Spectrum indigo family, no cross-hue gradient */
   --accent-1: #6366f1;   /* indigo 500 */
@@ -56,6 +60,71 @@
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
+
+/* ─── Light theme override ───
+   Triggered by <html data-theme="light">. All surfaces invert; accent and
+   semantic colors (priority reds/ambers/blues, status greens) retain hue
+   but get slightly darker for better contrast against white. */
+:root[data-theme="light"] {
+  --bg-0: #f8f8fb;
+  --bg-1: #ffffff;
+  --bg-2: #f0f0f5;
+  --bg-3: #e4e4ec;
+  --bg-hover: #d8d8e3;
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border: rgba(0, 0, 0, 0.11);
+  --border-strong: rgba(0, 0, 0, 0.2);
+
+  --text-0: #1a1a22;
+  --text-1: #4a4a5c;
+  --text-2: #6b6b7d;
+  --text-3: #9a9aa8;
+
+  --accent-1: #4f46e5;   /* a touch darker for white bg contrast */
+  --accent-2: #4338ca;
+  --accent-3: #6366f1;
+  --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+  --accent-glow: 0 0 24px rgba(79, 70, 229, 0.20);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(99, 102, 241, 0.04), transparent),
+    radial-gradient(900px 500px at 90% 0%, rgba(79, 70, 229, 0.03), transparent),
+    var(--bg-0);
+}
+
+/* Light-mode top bar: frosted white instead of frosted near-black */
+:root[data-theme="light"] .app-topbar {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* Status pills in light mode need lighter tinted backgrounds so the text
+   doesn't look washed out on white cards */
+:root[data-theme="light"] .status-new       { background: rgba(107, 107, 125, 0.12); }
+:root[data-theme="light"] .status-triaged   { background: rgba(6, 182, 212, 0.14); }
+:root[data-theme="light"] .status-pr-drafted,
+:root[data-theme="light"] .status-awaiting-review,
+:root[data-theme="light"] .status-fixing { background: rgba(245, 158, 11, 0.16); color: #b45309; }
+:root[data-theme="light"] .status-approved  { background: rgba(16, 185, 129, 0.14); color: #047857; }
+:root[data-theme="light"] .status-merged    { background: rgba(16, 185, 129, 0.2); color: #047857; }
+:root[data-theme="light"] .status-rejected  { background: rgba(239, 68, 68, 0.14); color: #b91c1c; }
+:root[data-theme="light"] .status-skipped   { background: rgba(107, 107, 125, 0.14); }
+
+/* Diff hunks: lighten green/red tints for white bg */
+:root[data-theme="light"] .diff-line.diff-add { background: rgba(16, 185, 129, 0.10); color: #047857; }
+:root[data-theme="light"] .diff-line.diff-del { background: rgba(239, 68, 68, 0.08); color: #b91c1c; }
+:root[data-theme="light"] .diff-line.diff-hunk { background: rgba(99, 102, 241, 0.06); color: #4338ca; }
+
+/* Badges need a legible tone on white */
+:root[data-theme="light"] .badge--arche { color: #4338ca; background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.2); }
+:root[data-theme="light"] .badge--fresh { color: #047857; }
+:root[data-theme="light"] .badge--active { color: #0891b2; }
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -107,41 +176,89 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .app-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  min-width: 0;
 }
 
 .app-brand__logo {
-  width: 30px; height: 30px;
-  border-radius: 6px;
-  background: var(--accent-2);
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--adobe-red);
   display: grid; place-items: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: -0.02em;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(235, 16, 0, 0.22);
+}
+
+.app-brand__logo svg { display: block; }
+
+.app-brand__text {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
 }
 
 .app-brand__title {
-  font-size: 17px;
+  font-size: 22px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   color: var(--text-0);
+  line-height: 1;
 }
 
 .app-brand__sub {
   font-size: 12px;
   color: var(--text-2);
-  margin-left: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.app-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
 }
 
 .app-nav {
   display: flex;
   gap: 4px;
+}
+
+.theme-toggle {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-1);
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius);
+  display: grid; place-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="light"] .theme-toggle {
+  background: #ffffff;
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] .theme-toggle:hover {
+  background: var(--bg-2);
 }
 
 .app-nav a {

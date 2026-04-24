@@ -215,7 +215,7 @@ const Dashboard = ({ ims }) => {
     <>
       <div className="hero">
         <div>
-          <h1 className="hero__title">Issue queue</h1>
+          <h1 className="hero__title">Open issues</h1>
         </div>
         <div className="hero__actions">
           {loading && <div className="spinner" aria-label="refreshing" />}
