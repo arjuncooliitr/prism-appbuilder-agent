@@ -1,12 +1,72 @@
 # AUP AI Week 2026 — Reflection
 
 **Participant:** Arjun Gupta · Developer Platform India (App Builder)
-**Project:** Prism — autonomous issue-to-PR agent, built on App Builder
+**Project:** Prism — autonomous agentic dashboard for Adobe aio open-source maintenance
 **Repo:** [github.com/arjuncooliitr/prism-appbuilder-agent](https://github.com/arjuncooliitr/prism-appbuilder-agent)
 **Dashboard:** [52381-567salmonmarsupial-stage.adobeio-static.net](https://52381-567salmonmarsupial-stage.adobeio-static.net/index.html)
-**Live PR:** [adobe/aio-lib-events#82](https://github.com/adobe/aio-lib-events/pull/82)
+**Live PRs:** [adobe/aio-lib-events#82](https://github.com/adobe/aio-lib-events/pull/82) · [adobe/aio-lib-events#83](https://github.com/adobe/aio-lib-events/pull/83)
 
-> This is a working draft for the May 1 reflection form. Scale answers are placeholders for personal calibration; the substance is real and specific.
+---
+
+## Outcome Reflection
+
+**Starting claim vs. ending state.** On Day 1, the pitch was *"an autonomous issue-to-PR bot built on App Builder itself."* On Day 5, there are two real draft PRs live on `adobe/aio-lib-events` — a CloudEvents bug fix that CI iterated to green over five autonomous rounds, and a three-file documentation URL replacement that shipped in ten seconds with zero LLM calls for the fix itself. The dashboard watches five aio repos and 75 open issues. The artifact exists, it works, and the design principles underneath it are reusable. That's the headline.
+
+### By the numbers
+
+- **7 I/O Runtime actions**, ~4,500 LOC across the codebase
+- **2 live draft PRs** on `adobe/aio-lib-events` — [#82](https://github.com/adobe/aio-lib-events/pull/82) (CloudEvents specversion fix via Claude tool-use + CI-driven iteration) and [#83](https://github.com/adobe/aio-lib-events/pull/83) (deterministic find-and-replace, zero LLM tokens for the fix)
+- **75 open issues** watched across `adobe/aio-cli`, `aio-cli-plugin-app`, `aio-cli-plugin-app-dev`, `aio-cli-plugin-runtime`, `aio-lib-events`
+- **5 refix iterations** on PR #82 that turned red CI green with a one-line lint fix the first three attempts missed
+- **3 auto-fix archetypes** — typo, dep-bump, bug — routed via a deterministic-first / Claude-fallback pattern
+- **51 orphan state records pruned** after a repo-list cleanup surfaced a data-hygiene bug I hadn't designed for
+
+### What worked better than expected
+
+**1. Agent discipline became a feature, not a failure.** Prism's `abort` tool turned out more valuable than any prompt. When Claude realized an issue was about code in a different repo, it aborted with a specific reason instead of pushing a wrong fix. That's the kind of behavior enterprise agents need but most demos hide. Surfacing the abort reason on the dashboard ("Skipped by Prism: fix lives in `aio-cli-plugin-app`") turned a failure signal into structured product information — three such skips pointed at exactly which plugin repos I should add to the watch list. *The agent told me how to configure itself.* That wasn't on the Day 1 plan.
+
+**2. Deterministic-first routing.** The biggest dead-end became the week's sharpest pattern. Issue #32 — a URL replacement across three files — burned four attempts and ~8 minutes of Claude iterations without shipping a fix. A 130-line regex-extract + grep-rewrite module shipped it in 10 seconds. The lesson (*pick the right tool for the shape of the problem before reaching for an agent*) was already in the reflection as theory before I shipped it as code. Now it's both. Every future task gets a deterministic-check first; Claude is the fallback for genuinely unstructured problems.
+
+**3. CI-log-aware iteration.** GitHub Actions checks return empty `output.text`; the real failure lives in workflow run logs at a separate endpoint. Most agent frameworks miss this completely. Once Prism pulled the last 6KB of the job log into Claude's context on refix, iteration on CI failures actually started working — that's the difference between PR #82 ending at attempt-1 with unchecked lint errors and PR #82 actually passing CI at attempt 5.
+
+**4. The abort tool + rescue-turn combo.** When Claude kept narrating plans without calling `propose_edit`, a one-shot *"you described but didn't execute"* nudge at loop-end caught the case. Combined with the `normalizeEdit` guard (always append trailing newline, reject byte-identical proposals), this turned a whole class of silent LLM failures into explicit, visible outcomes.
+
+### What didn't work / honest-failure material
+
+**1. The describe-instead-of-execute trap cost ~8 hours.** Claude, on issue #32, read the three target files and ended its turn with *"Let me prepare the updated content for each file"* — without calling the tools. Stricter prompts made it more cautious, not more decisive. Four iterations of prompt-tightening later, I accepted that prompt engineering isn't a load-bearing safety mechanism against strong LLM reflexes. The fix was a mechanical rescue turn *and* a deterministic path that bypasses the loop entirely for this task shape.
+
+**2. Opus 4.7 was inaccessible on-demand.** The Bedrock account had access to Opus 4.1/4.5/4.6/4.7 *on paper*, but every on-demand call returned `AccessDeniedException` — they required custom inference profiles or provisioned throughput I couldn't set up from terminal. Settled on Opus 4 via the `us.` regional profile. A concrete example of *enterprise LLM infrastructure decoupling "access granted" from "invocable on-demand"* in a way single-developer projects never do.
+
+**3. CloudFront's 60s sync timeout.** Every interactive `fix-issue` call 504s the client while continuing to run backend-side. The dashboard compensates with a polling loop + in-flight spinner, but the designed-async experience would be cleaner. Tier 3 webhooks (GitHub Actions → I/O Events → autonomous iteration) remains unshipped. Not a code problem; a scope problem.
+
+**4. dep-bump archetype unshipped to live.** The code works — unit tests pass, live npm registry calls resolve correctly, `package.json` rewrites preserve caret/tilde prefixes. But every open bump on the watched repos is a Dependabot *PR*, and `fetch-issues` correctly filters PRs. When a human-filed bump issue appears, the full pipeline runs with no further code change. The code is ready; the test target isn't. Honest gap.
+
+### What's genuinely novel
+
+Three patterns worth extracting for other teams:
+
+- **State-backed dashboard configuration that overrides env-var bootstrap.** UI changes persist across restarts and take effect on the next poll, no redeploy required. The env var is the cold-start seed, not the source of truth.
+- **Tool-call safety layer.** `normalizeEdit` fixes two silent LLM failures at once — preserves trailing newlines that Claude drops mid-serialization, and rejects byte-identical proposals before they reach the commit layer. Ten lines of mechanical code that catch failures prompt engineering can't.
+- **Abort-with-reason as product signal.** Every skip carries a Claude-authored explanation. The dashboard surfaces these as an amber panel on the card. Three skips pointed at `aio-cli-plugin-app` in a row — that's structured evidence, not noise. Turning abort reasons into config recommendations is a natural next feature.
+
+### The personal takeaway
+
+Before this week, I reached for Claude as a pair programmer — it wrote snippets, I held the architecture. After this week, I reach for Claude as an executor: I spec at a higher level, Claude produces large artifacts, and the center of my work shifts from *producing* to *validating*. The validation bottleneck is now the thing I'd redesign.
+
+Two concrete behavior changes I'll carry forward:
+
+- **For every new task, ask whether it has a clean mechanical solution before writing a system prompt.** Agents are the fallback, not the default.
+- **Every irreversible action gets a mechanical safety layer between the LLM's output and the real world.** No prompt alone is a reliable safety mechanism.
+
+### Strategic framing
+
+App Builder + Bedrock + GitHub API tool-use is a reusable pattern. Any Adobe team with a public repo, Jira board, or ServiceNow ingress point could fork Prism's skeleton and build their own triage-and-act agent in under a week. The reference implementation matters more than the specific outcome: *Prism itself is the smaller artifact; the pattern it validates is the larger one.*
+
+The meta-frame — *Prism uses App Builder to improve App Builder's own open-source ecosystem* — works because it's literally true. For the team's strategic argument that App Builder is the right platform to build AI agents on, this is a working, live, unambiguous proof point rather than a slide.
+
+---
+
+> The rest of this document is the long-form reflection answering the AI Week form questions individually, with an appendix of timestamped moments from the week. Scale answers are bracketed placeholders for personal calibration before submission.
 
 ---
 
