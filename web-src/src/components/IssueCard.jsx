@@ -140,6 +140,17 @@ const IssueCard = ({ issue, onAction, isPending = false }) => {
         <p className="issue-rationale">{triage.rationale}</p>
       )}
 
+      {status === 'skipped' && issue.skip_reason && (
+        <p className="issue-skip-reason">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span><strong>Skipped by Prism:</strong> {issue.skip_reason}</span>
+        </p>
+      )}
+
       <div className="issue-footer">
         <span className="issue-time">
           Updated {relTime(issue.updated_at)}

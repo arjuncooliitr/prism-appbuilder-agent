@@ -730,6 +730,28 @@ a:hover { text-decoration: underline; text-decoration-color: var(--accent-1); }
   padding-left: 10px;
 }
 
+.issue-skip-reason {
+  margin-top: 10px;
+  margin-bottom: 0;
+  padding: 8px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-1);
+  line-height: 1.45;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.issue-skip-reason svg { color: var(--warn); }
+
+.issue-skip-reason strong {
+  color: var(--text-0);
+  font-weight: 600;
+}
+
 .issue-footer {
   margin-top: 12px;
   padding-top: 12px;
