@@ -43,15 +43,47 @@ async function main (params) {
 
     const gh = octokit(token)
     const fetched = []
+    const updated = []
     const errors = []
+
+    // Fields that, if they've changed, justify a state write. Everything else
+    // (last_fetched_at in particular) is write-churn that burns through the
+    // aio-lib-state rate limit for zero useful information.
+    const GH_FIELDS = ['title', 'body', 'labels', 'user', 'comments', 'created_at', 'updated_at', 'html_url']
+    const ghDataChanged = (a, b) => {
+      if (!a) return true
+      for (const f of GH_FIELDS) {
+        if (f === 'labels') {
+          const aLabels = (a.labels || []).join('|')
+          const bLabels = (b.labels || []).join('|')
+          if (aLabels !== bLabels) return true
+        } else if (a[f] !== b[f]) {
+          return true
+        }
+      }
+      return false
+    }
 
     for (const { owner, repo } of repos) {
       try {
         const issues = await listOpenIssues(gh, owner, repo, { perPage: 30 })
         logger.info(`Fetched ${issues.length} open issues from ${owner}/${repo}`)
 
-        for (const iss of issues) {
-          const existing = await getIssue(iss.repo, iss.number)
+        // Parallelize reads — they're the cheap half of the rate budget
+        const existingList = await Promise.all(issues.map(iss => getIssue(iss.repo, iss.number)))
+
+        for (let i = 0; i < issues.length; i++) {
+          const iss = issues[i]
+          const existing = existingList[i]
+          const changed = ghDataChanged(existing, iss)
+
+          if (!changed) {
+            // No real change — skip the write entirely. This is what fixes the
+            // rate-limit stampede: for a quiet poll, we go from 19 writes to 0.
+            fetched.push(existing)
+            continue
+          }
+
           const merged = {
             ...(existing || {}),
             ...iss,
@@ -61,7 +93,10 @@ async function main (params) {
           }
           await putIssue(iss.repo, iss.number, merged)
           fetched.push(merged)
+          updated.push(`${iss.repo}#${iss.number}`)
         }
+
+        logger.info(`${owner}/${repo}: ${updated.length} issue(s) written, ${issues.length - updated.length} unchanged`)
       } catch (e) {
         logger.error(`Failed to fetch ${owner}/${repo}:`, e.message)
         errors.push({ repo: `${owner}/${repo}`, error: e.message })
@@ -77,7 +112,7 @@ async function main (params) {
       statusCode: 200,
       body: {
         count: all.length,
-        fetched_now: fetched.length,
+        fetched_now: updated.length,   // only count actual writes — this is what the dashboard activity feed shows
         target_repos: targetRepos,
         settings_source: (stateRepos && stateRepos.length > 0) ? 'state' : 'env',
         errors,
